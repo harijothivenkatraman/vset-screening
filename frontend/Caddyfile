@@ -1,0 +1,38 @@
+{$DOMAIN} {
+	encode zstd gzip
+
+	# Basic Auth (injected via entrypoint if configured)
+	import /etc/caddy/auth.caddy
+
+	# Security headers
+	header {
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		-Server
+	}
+
+	# Proxy API and health requests to internal backend service
+	handle /api/* {
+		reverse_proxy backend:8000
+	}
+
+	handle /health {
+		reverse_proxy backend:8000
+	}
+
+	# Serve static files for SPA
+	handle {
+		root * /srv
+
+		@assets path /assets/*
+		header @assets Cache-Control "public, max-age=31536000, immutable"
+
+		@notAssets not path /assets/*
+		header @notAssets Cache-Control "no-cache, no-store, must-revalidate"
+
+		try_files {path} /index.html
+		file_server
+	}
+}

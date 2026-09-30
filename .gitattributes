@@ -1,0 +1,8 @@
+# Ensure shell scripts, Caddyfile, and Dockerfiles always retain LF line endings on all OSes
+* text=auto
+*.sh text eol=lf
+Caddyfile text eol=lf
+Dockerfile* text eol=lf
+.dockerignore text eol=lf
+.gitattributes text eol=lf
+

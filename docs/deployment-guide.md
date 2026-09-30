@@ -94,7 +94,7 @@ Render provides a permanently free tier for Python web services.
    | `ENVIRONMENT` | `production` | Enables production mode |
    | `CORS_ORIGINS` | `["*"]` | Allows frontend requests |
    | `DATABASE_URL` | `sqlite+aiosqlite:///./vset.db` | Uses local SQLite file |
-   | `IMPORT_API_KEY` | `vset-secret-admin-key-2026` | Custom admin key for `/api/v1/import` |
+   | `IMPORT_API_KEY` | *(32+ char random hex string)* | Custom admin key for `/api/v1/reports/import` |
 
 6. Click **Create Web Service**.
 7. Wait 2–3 minutes for the build to finish. Once live, Render gives you a public URL like:
@@ -200,9 +200,9 @@ Both Vercel and Render support adding custom domains (e.g. `screening.yourdomain
 To ingest a new company screen report into the live database without redeploying:
 Send a POST request to your backend:
 ```bash
-curl -X POST "https://vset-api-xxxx.onrender.com/api/v1/import" \
+curl -X POST "https://vset-api-xxxx.onrender.com/api/v1/reports/import" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: vset-secret-admin-key-2026" \
+  -H "X-API-Key: <YOUR_STRONG_IMPORT_API_KEY>" \
   -d @path/to/new_company_screen.json
 ```
 The new company will immediately become searchable and selectable in your live Vercel dashboard!

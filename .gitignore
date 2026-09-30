@@ -1,0 +1,29 @@
+# Environment files
+.env
+.env.local
+.env.*.local
+!.env.example
+
+
+# Database backups & local SQLite files
+backups/
+*.db
+*.sqlite3
+
+# Python caches and virtual environments
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.venv/
+venv/
+
+# Node and build outputs
+node_modules/
+dist/
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

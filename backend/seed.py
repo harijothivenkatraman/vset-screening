@@ -13,15 +13,16 @@ from app.infrastructure.persistence.database import async_session_factory, init_
 
 def find_reference_files() -> list[Path]:
     search_dirs = [
-        Path(__file__).parent.parent / "reference",
+        Path(os.environ["REFERENCE_DIR"]) if "REFERENCE_DIR" in os.environ else None,
         Path(__file__).parent / "reference",
-        Path("F:/dev/Vset/reference"),
-        Path(__file__).parent.parent,
+        Path(__file__).parent.parent / "reference",
+        Path.cwd() / "reference",
+        Path("/app/reference"),
     ]
 
     files: list[Path] = []
     for d in search_dirs:
-        if d.is_dir():
+        if d and d.is_dir():
             t_file = d / "terraspark_founder_screen.json"
             m_file = d / "mysa_founder_screen.json"
             if t_file.exists() and t_file not in files:
@@ -33,7 +34,7 @@ def find_reference_files() -> list[Path]:
     return files
 
 
-async def seed() -> None:
+async def seed() -> list[tuple[str, str]]:
     print("=== Initializing Database Schema ===")
     await init_db()
 
@@ -46,6 +47,7 @@ async def seed() -> None:
     for f in ref_files:
         print(f" - {f}")
 
+    results: list[tuple[str, str]] = []
     async with async_session_factory() as session:
         importer = ReportImportService(session)
         for f in ref_files:
@@ -54,8 +56,10 @@ async def seed() -> None:
                 data = json.load(fp)
             result = await importer.import_report(data)
             print(f"Result: status='{result.status}', company='{result.company_slug}', message='{result.message}'")
+            results.append((result.company_slug, result.status))
 
     print("\n=== Seeding Completed Successfully! ===")
+    return results
 
 
 if __name__ == "__main__":
