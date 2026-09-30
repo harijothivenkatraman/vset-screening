@@ -1,0 +1,21 @@
+services:
+  # Backend API service (FastAPI)
+  - type: web
+    name: vset-backend
+    runtime: python
+    rootDir: backend
+    plan: free
+    buildCommand: "pip install -r requirements.txt && python seed.py"
+    startCommand: "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: ENVIRONMENT
+        value: production
+      - key: DATABASE_URL
+        value: sqlite+aiosqlite:///./vset.db
+      - key: IMPORT_API_KEY
+        generateValue: true
+      - key: CORS_ORIGINS
+        value: '["*"]'

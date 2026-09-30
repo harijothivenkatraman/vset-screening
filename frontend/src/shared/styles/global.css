@@ -1,0 +1,25 @@
+@import "tailwindcss";
+@import "./tokens.css";
+
+/* Base typography and reset */
+html,
+body {
+  font-family: var(--font-family);
+  background-color: var(--color-slate-50);
+  color: var(--color-slate-900);
+  margin: 0;
+  padding: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Tabular figures for numbers, dates, references */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Focus styles for accessibility */
+*:focus-visible {
+  outline: 2px solid var(--color-navy);
+  outline-offset: 2px;
+}

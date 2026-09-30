@@ -1,0 +1,14 @@
+version: "3.8"
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=production
+      - DATABASE_URL=sqlite+aiosqlite:///./vset.db
+      - CORS_ORIGINS=["*"]
+    restart: unless-stopped
