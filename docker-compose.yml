@@ -30,6 +30,20 @@ services:
       IMPORT_API_KEY: ${IMPORT_API_KEY}
       CORS_ORIGINS: ${CORS_ORIGINS:-[]}
       WEB_CONCURRENCY: ${WEB_CONCURRENCY:-1}
+      DISCOVERY_ENABLED: ${DISCOVERY_ENABLED:-true}
+      SEARCH_PROVIDERS: ${SEARCH_PROVIDERS:-["searxng","duckduckgo"]}
+      SEARXNG_BASE_URL: ${SEARXNG_BASE_URL:-}
+      LLM_BASE_URL: ${LLM_BASE_URL:-}
+      LLM_MODEL: ${LLM_MODEL:-qwen2.5:7b-instruct}
+      LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-300}
+      LLM_PROFILE: ${LLM_PROFILE:-light}
+      CACHE_TTL: ${CACHE_TTL:-3600}
+      SCRAPER_MIN_INTERVAL: ${SCRAPER_MIN_INTERVAL:-3.0}
+      IMAGE_PROXY_ALLOWED_HOSTS: ${IMAGE_PROXY_ALLOWED_HOSTS:-["media.licdn.com","static.licdn.com"]}
+      DISCOVERY_MAX_JOBS_STORED: ${DISCOVERY_MAX_JOBS_STORED:-20}
+      DISCOVERY_MAX_EVIDENCE_SIZE_MB: ${DISCOVERY_MAX_EVIDENCE_SIZE_MB:-5}
+      DISCOVERY_RATE_LIMIT_PER_HOUR: ${DISCOVERY_RATE_LIMIT_PER_HOUR:-5}
+      DISCOVERY_MIN_FREE_DISK_GB: ${DISCOVERY_MIN_FREE_DISK_GB:-2.0}
     depends_on:
       db:
         condition: service_healthy
@@ -51,6 +65,7 @@ services:
       dockerfile: Dockerfile
       args:
         VITE_API_BASE_URL: /api/v1
+        VITE_API_KEY: ${IMPORT_API_KEY}
     restart: unless-stopped
     ports:
       - "80:80"

@@ -4,6 +4,15 @@ from app.presentation.schemas.company_schemas import (
     CompanyListItemResponse,
     ReportHeaderResponse,
 )
+from app.presentation.schemas.discovery import (
+    CandidateItemSchema,
+    DiscoveryHealthResponse,
+    DiscoveryJobStatusResponse,
+    ResolveCandidatesRequest,
+    ResolveCandidatesResponse,
+    StartDiscoveryJobRequest,
+    StartDiscoveryJobResponse,
+)
 from app.presentation.schemas.import_schemas import ImportResponse
 from app.presentation.schemas.section_schemas import (
     SectionDetailResponse,
@@ -22,4 +31,11 @@ __all__ = [
     "ActionsResponse",
     "SourcesResponse",
     "ImportResponse",
+    "CandidateItemSchema",
+    "ResolveCandidatesRequest",
+    "ResolveCandidatesResponse",
+    "StartDiscoveryJobRequest",
+    "StartDiscoveryJobResponse",
+    "DiscoveryJobStatusResponse",
+    "DiscoveryHealthResponse",
 ]

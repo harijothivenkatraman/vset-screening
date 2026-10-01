@@ -1,7 +1,9 @@
 import React from "react";
-import { Menu, X } from "lucide-react";
+import { Link } from "react-router-dom";
+import { Menu, Plus, X } from "lucide-react";
 import { CompanySwitcher } from "@/features/companies/CompanySwitcher";
 import { useReportHeader } from "@/features/report/data/hooks";
+import { Button } from "@/shared/ui/Button";
 
 interface TopBarProps {
   currentSlug: string;
@@ -52,6 +54,14 @@ export const TopBar: React.FC<TopBarProps> = ({
             {header.audienceLabel}
           </span>
         )}
+
+        <Link to="/discover">
+          <Button size="sm" variant="primary" className="gap-1.5 shadow-xs">
+            <Plus className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Discover Company</span>
+            <span className="sm:hidden">New</span>
+          </Button>
+        </Link>
       </div>
     </header>
   );

@@ -1,4 +1,5 @@
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api/v1";
+const API_KEY = import.meta.env.VITE_API_KEY || "dev-insecure-test-key-32-chars-long-00000";
 
 export class ApiError extends Error {
   constructor(
@@ -17,6 +18,9 @@ export async function apiClient<T>(endpoint: string, options?: RequestInit): Pro
   const headers = new Headers(options?.headers);
   if (!headers.has("Content-Type") && !(options?.body instanceof FormData)) {
     headers.set("Content-Type", "application/json");
+  }
+  if (!headers.has("X-API-Key") && API_KEY) {
+    headers.set("X-API-Key", API_KEY);
   }
 
   const response = await fetch(url, {

@@ -90,3 +90,143 @@ def get_sources_service(
 
 def get_import_service(session: AsyncSession = Depends(get_db_session)) -> ReportImportService:
     return ReportImportService(session)
+
+
+# ── Discovery Singletons & Factories ──
+from functools import lru_cache
+
+from app.config import get_settings
+from app.application.ports.cache_port import CachePort
+from app.application.ports.job_store_port import JobStorePort
+from app.application.ports.llm_port import LlmPort
+from app.application.ports.page_fetcher_port import PageFetcherPort
+from app.application.ports.profile_scraper_port import ProfileScraperPort
+from app.application.ports.report_extractor_port import ReportExtractorPort
+from app.application.ports.report_import_port import ReportImportPort
+from app.application.ports.web_search_port import WebSearchPort
+
+from app.application.services.build_report import BuildReportService
+from app.application.services.get_discovery_job import GetDiscoveryJobService
+from app.application.services.resolve_candidates import ResolveCandidatesService
+from app.application.services.start_discovery_job import StartDiscoveryJobService
+
+from app.infrastructure.discovery.cache.ttl_cache import InMemoryTtlCache
+from app.infrastructure.discovery.http.rate_limiter import HostRateLimiter
+from app.infrastructure.discovery.jobs.in_memory_job_store import InMemoryJobStore
+from app.infrastructure.discovery.llm.openai_compatible import OpenAICompatibleLlmAdapter
+from app.infrastructure.discovery.llm.report_extractor import SectionBySectionExtractor
+from app.infrastructure.discovery.report_import_adapter import ReportImportAdapter
+from app.infrastructure.discovery.scrapers.linkedin_public import LinkedInPublicScraper
+from app.infrastructure.discovery.scrapers.website_fetcher import WebsiteFetcherAdapter
+from app.infrastructure.discovery.search.duckduckgo_search import DuckDuckGoSearchAdapter
+from app.infrastructure.discovery.search.fallback_search import FallbackSearchAdapter
+from app.infrastructure.discovery.search.searxng_search import SearXNGSearchAdapter
+
+
+@lru_cache
+def get_cache_port() -> CachePort:
+    settings = get_settings()
+    return InMemoryTtlCache(default_ttl_seconds=settings.CACHE_TTL, max_size=500)
+
+
+@lru_cache
+def get_job_store_port() -> JobStorePort:
+    settings = get_settings()
+    return InMemoryJobStore(max_jobs=settings.DISCOVERY_MAX_JOBS_STORED)
+
+
+@lru_cache
+def get_rate_limiter() -> HostRateLimiter:
+    settings = get_settings()
+    return HostRateLimiter(min_interval_seconds=settings.SCRAPER_MIN_INTERVAL)
+
+
+def get_web_search_port() -> WebSearchPort:
+    settings = get_settings()
+    providers: list[tuple[str, WebSearchPort]] = []
+
+    for name in settings.SEARCH_PROVIDERS:
+        name_clean = name.strip().lower()
+        if name_clean == "searxng":
+            if settings.SEARXNG_BASE_URL:
+                providers.append(("searxng", SearXNGSearchAdapter(base_url=settings.SEARXNG_BASE_URL)))
+        elif name_clean == "duckduckgo":
+            providers.append(("duckduckgo", DuckDuckGoSearchAdapter()))
+
+    if not providers:
+        providers.append(("duckduckgo", DuckDuckGoSearchAdapter()))
+
+    return FallbackSearchAdapter(providers)
+
+
+def get_profile_scraper_port(
+    rate_limiter: HostRateLimiter = Depends(get_rate_limiter),
+) -> ProfileScraperPort:
+    return LinkedInPublicScraper(rate_limiter=rate_limiter)
+
+
+def get_page_fetcher_port(
+    rate_limiter: HostRateLimiter = Depends(get_rate_limiter),
+) -> PageFetcherPort:
+    return WebsiteFetcherAdapter(rate_limiter=rate_limiter)
+
+
+def get_llm_port() -> LlmPort:
+    settings = get_settings()
+    return OpenAICompatibleLlmAdapter(
+        base_url=settings.LLM_BASE_URL,
+        model=settings.LLM_MODEL,
+        timeout_seconds=settings.LLM_TIMEOUT_SECONDS,
+    )
+
+
+def get_report_extractor_port(
+    llm: LlmPort = Depends(get_llm_port),
+) -> ReportExtractorPort:
+    settings = get_settings()
+    return SectionBySectionExtractor(llm=llm, profile=settings.LLM_PROFILE)
+
+
+def get_report_import_port(
+    session: AsyncSession = Depends(get_db_session),
+) -> ReportImportPort:
+    return ReportImportAdapter(session=session)
+
+
+def get_resolve_candidates_service(
+    web_search: WebSearchPort = Depends(get_web_search_port),
+    cache: CachePort = Depends(get_cache_port),
+) -> ResolveCandidatesService:
+    return ResolveCandidatesService(web_search=web_search, cache=cache)
+
+
+def get_start_discovery_job_service(
+    job_store: JobStorePort = Depends(get_job_store_port),
+) -> StartDiscoveryJobService:
+    settings = get_settings()
+    return StartDiscoveryJobService(
+        job_store=job_store,
+        discovery_enabled=settings.DISCOVERY_ENABLED,
+    )
+
+
+def get_discovery_job_service(
+    job_store: JobStorePort = Depends(get_job_store_port),
+) -> GetDiscoveryJobService:
+    return GetDiscoveryJobService(job_store=job_store)
+
+
+def get_build_report_service(
+    job_store: JobStorePort = Depends(get_job_store_port),
+    profile_scraper: ProfileScraperPort = Depends(get_profile_scraper_port),
+    page_fetcher: PageFetcherPort = Depends(get_page_fetcher_port),
+    report_extractor: ReportExtractorPort = Depends(get_report_extractor_port),
+    report_import: ReportImportPort = Depends(get_report_import_port),
+) -> BuildReportService:
+    return BuildReportService(
+        job_store=job_store,
+        profile_scraper=profile_scraper,
+        page_fetcher=page_fetcher,
+        report_extractor=report_extractor,
+        report_import=report_import,
+    )

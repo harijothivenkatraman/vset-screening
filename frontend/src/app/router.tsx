@@ -5,6 +5,7 @@ import { ActionsPage } from "@/features/report/ui/actions/ActionsPage";
 import { SectionPage } from "@/features/report/ui/sections/SectionPage";
 import { SourcesPage } from "@/features/report/ui/sources/SourcesPage";
 import { useCompanies } from "@/features/companies/hooks";
+import { DiscoverPage } from "@/features/discovery";
 
 const IndexRedirect: React.FC = () => {
   const { data: companies, isLoading } = useCompanies();
@@ -22,6 +23,10 @@ export const router = createBrowserRouter([
   {
     path: "/",
     element: <IndexRedirect />,
+  },
+  {
+    path: "/discover",
+    element: <DiscoverPage />,
   },
   {
     path: "/companies/:slug",

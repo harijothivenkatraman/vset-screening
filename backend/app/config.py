@@ -34,6 +34,22 @@ class Settings(BaseSettings):
     CORS_ORIGINS: list[str] = ["*"]
     ENVIRONMENT: str = "development"
 
+    # Discovery settings
+    DISCOVERY_ENABLED: bool = True
+    SEARCH_PROVIDERS: list[str] = ["searxng", "duckduckgo"]
+    SEARXNG_BASE_URL: str | None = None
+    LLM_BASE_URL: str = "http://127.0.0.1:11434/v1"
+    LLM_MODEL: str = "qwen2.5:7b-instruct"
+    LLM_TIMEOUT_SECONDS: float = 300.0
+    LLM_PROFILE: str = "light"
+    CACHE_TTL: int = 3600
+    SCRAPER_MIN_INTERVAL: float = 3.0
+    IMAGE_PROXY_ALLOWED_HOSTS: list[str] = ["media.licdn.com", "static.licdn.com"]
+    DISCOVERY_MAX_JOBS_STORED: int = 20
+    DISCOVERY_MAX_EVIDENCE_SIZE_MB: int = 5
+    DISCOVERY_RATE_LIMIT_PER_HOUR: int = 5
+    DISCOVERY_MIN_FREE_DISK_GB: float = 2.0
+
     @field_validator("DATABASE_URL", mode="before")
     @classmethod
     def assemble_db_url(cls, v: Any) -> str:
@@ -41,9 +57,9 @@ class Settings(BaseSettings):
             return normalize_database_url(v)
         return v
 
-    @field_validator("CORS_ORIGINS", mode="before")
+    @field_validator("CORS_ORIGINS", "SEARCH_PROVIDERS", "IMAGE_PROXY_ALLOWED_HOSTS", mode="before")
     @classmethod
-    def assemble_cors_origins(cls, v: Any) -> list[str]:
+    def assemble_string_list(cls, v: Any) -> list[str]:
         if isinstance(v, str):
             val = v.strip()
             if not val:

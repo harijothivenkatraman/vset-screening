@@ -13,6 +13,8 @@ from app.infrastructure.persistence.database import engine, init_db
 from app.presentation.routers import (
     actions_router,
     companies_router,
+    discovery_router,
+    image_proxy_router,
     import_router,
     sections_router,
     sources_router,
@@ -89,3 +91,5 @@ app.include_router(sections_router, prefix=api_v1_prefix)
 app.include_router(actions_router, prefix=api_v1_prefix)
 app.include_router(sources_router, prefix=api_v1_prefix)
 app.include_router(import_router, prefix=api_v1_prefix)
+app.include_router(discovery_router, prefix=api_v1_prefix)
+app.include_router(image_proxy_router, prefix=api_v1_prefix)

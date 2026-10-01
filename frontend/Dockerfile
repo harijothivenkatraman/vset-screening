@@ -13,6 +13,8 @@ COPY . .
 # Set relative API base URL for same-origin proxy
 ARG VITE_API_BASE_URL=/api/v1
 ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
+ARG VITE_API_KEY=""
+ENV VITE_API_KEY=$VITE_API_KEY
 
 # Build production bundle
 RUN npm run build
