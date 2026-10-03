@@ -114,14 +114,16 @@ describe("CandidateReview", () => {
 
   it("renders candidates with confidence percentages", () => {
     render(
-      <CandidateReview
-        companyName="Acme"
-        founderNames={["Alice Vance"]}
-        resolveData={mockResolveData}
-        isStarting={false}
-        onBack={vi.fn()}
-        onConfirm={vi.fn()}
-      />
+      <QueryClientProvider client={createTestQueryClient()}>
+        <CandidateReview
+          companyName="Acme"
+          founderNames={["Alice Vance"]}
+          resolveData={mockResolveData}
+          isStarting={false}
+          onBack={vi.fn()}
+          onConfirm={vi.fn()}
+        />
+      </QueryClientProvider>
     );
 
     expect(screen.getByText("Review Public Footprint for Acme")).toBeInTheDocument();
@@ -138,14 +140,16 @@ describe("CandidateReview", () => {
     };
 
     render(
-      <CandidateReview
-        companyName="Acme"
-        founderNames={["Alice"]}
-        resolveData={fallbackData}
-        isStarting={false}
-        onBack={vi.fn()}
-        onConfirm={vi.fn()}
-      />
+      <QueryClientProvider client={createTestQueryClient()}>
+        <CandidateReview
+          companyName="Acme"
+          founderNames={["Alice"]}
+          resolveData={fallbackData}
+          isStarting={false}
+          onBack={vi.fn()}
+          onConfirm={vi.fn()}
+        />
+      </QueryClientProvider>
     );
 
     expect(screen.getByText("Search service currently unavailable")).toBeInTheDocument();
@@ -154,14 +158,16 @@ describe("CandidateReview", () => {
   it("calls onConfirm when user submits confirmed URLs", () => {
     const handleConfirm = vi.fn();
     render(
-      <CandidateReview
-        companyName="Acme"
-        founderNames={["Alice Vance"]}
-        resolveData={mockResolveData}
-        isStarting={false}
-        onBack={vi.fn()}
-        onConfirm={handleConfirm}
-      />
+      <QueryClientProvider client={createTestQueryClient()}>
+        <CandidateReview
+          companyName="Acme"
+          founderNames={["Alice Vance"]}
+          resolveData={mockResolveData}
+          isStarting={false}
+          onBack={vi.fn()}
+          onConfirm={handleConfirm}
+        />
+      </QueryClientProvider>
     );
 
     fireEvent.click(
@@ -172,6 +178,45 @@ describe("CandidateReview", () => {
       founder_linkedin_alice_vance: "https://linkedin.com/in/alicevance",
       website: "https://acme.io",
     });
+  });
+
+  it("submits manual evidence text alongside confirmed URLs", () => {
+    const handleConfirm = vi.fn();
+    render(
+      <QueryClientProvider client={createTestQueryClient()}>
+        <CandidateReview
+          companyName="Acme"
+          founderNames={["Alice Vance"]}
+          resolveData={mockResolveData}
+          isStarting={false}
+          onBack={vi.fn()}
+          onConfirm={handleConfirm}
+        />
+      </QueryClientProvider>
+    );
+
+    const textareas = screen.getAllByPlaceholderText(/Paste profile text/);
+    expect(textareas.length).toBeGreaterThan(0);
+    // Paste text into first textarea (company_linkedin)
+    fireEvent.change(textareas[0], {
+      target: { value: "Acme was founded in 2021 by robotics experts." },
+    });
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /Confirm Sources & Assemble Report/ })
+    );
+    expect(handleConfirm).toHaveBeenCalledWith(
+      {
+        company_linkedin: "https://linkedin.com/company/acme",
+        founder_linkedin_alice_vance: "https://linkedin.com/in/alicevance",
+        website: "https://acme.io",
+      },
+      {
+        company_linkedin: {
+          text: "Acme was founded in 2021 by robotics experts.",
+        },
+      }
+    );
   });
 });
 

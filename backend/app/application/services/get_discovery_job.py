@@ -1,9 +1,10 @@
 """Use case: get discovery job status."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from app.application.ports.job_store_port import JobStorePort
+from app.domain.entities.discovery import SourceDiagnostic
 from app.domain.exceptions import JobNotFoundError
 
 
@@ -17,6 +18,7 @@ class JobStatusOutput:
     warnings: list[str]
     result_slug: str | None
     error_message: str | None
+    diagnostics: list[SourceDiagnostic] = field(default_factory=list)
 
 
 class GetDiscoveryJobService:
@@ -39,4 +41,5 @@ class GetDiscoveryJobService:
             warnings=list(job.warnings),
             result_slug=job.result_slug,
             error_message=job.error_message,
+            diagnostics=list(job.diagnostics),
         )

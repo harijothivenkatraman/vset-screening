@@ -259,9 +259,41 @@ class TestBuildReportService:
 
         await service.execute(job)
 
-        # Should still succeed (with warnings) since missing sources are non-fatal
-        assert job.state in (JobState.SUCCEEDED, JobState.PARTIAL)
+        # Should be PARTIAL since all attempted sources failed
+        assert job.state == JobState.PARTIAL
         assert len(job.warnings) > 0
+        assert len(job.diagnostics) > 0
+
+    async def test_build_report_records_diagnostics(self) -> None:
+        store = FakeJobStore()
+        scraper = FakeProfileScraper()
+        scraper.company_profiles["https://linkedin.com/company/acme"] = CompanyProfile(
+            name="Acme", description="A company",
+        )
+        fetcher = FakePageFetcher()
+        fetcher.pages["https://www.acme.com"] = PageContent(
+            url="https://www.acme.com",
+            title="Acme",
+            description="Acme desc",
+            text="About Acme Corp.",
+        )
+        extractor = FakeReportExtractor()
+        importer = FakeReportImport()
+
+        service = BuildReportService(store, scraper, fetcher, extractor, importer)
+
+        job = _make_job("job-diag")
+        job.confirmed_urls = {
+            "company_linkedin": "https://linkedin.com/company/acme",
+            "website": "https://www.acme.com",
+        }
+        await store.create(job)
+        await service.execute(job)
+
+        assert len(job.diagnostics) >= 2
+        get_svc = GetDiscoveryJobService(store)
+        status = await get_svc.execute("job-diag")
+        assert len(status.diagnostics) >= 2
 
     async def test_build_report_failed_on_critical_error(self) -> None:
         store = FakeJobStore()

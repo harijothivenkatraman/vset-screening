@@ -41,13 +41,17 @@ export const DiscoverPage: React.FC = () => {
     }
   };
 
-  const handleConfirmSources = async (confirmedUrls: Record<string, string>) => {
+  const handleConfirmSources = async (
+    confirmedUrls: Record<string, string>,
+    manualEvidence?: Record<string, any>,
+  ) => {
     if (!formValues) return;
     try {
       const resp = await startJobMutation.mutateAsync({
         company_name: formValues.company_name,
         founder_names: formValues.founder_names,
         confirmed_urls: confirmedUrls,
+        manual_evidence: manualEvidence,
       });
       setActiveJobId(resp.job_id);
       setStep("progress");

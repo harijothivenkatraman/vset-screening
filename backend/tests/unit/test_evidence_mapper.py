@@ -365,3 +365,329 @@ def _make_rich_evidence() -> Evidence:
             ),
         ],
     )
+
+
+class TestEvidenceMapperSourcePermutations:
+    """Golden tests for multi-source merged evidence permutations:
+    1. website-only evidence
+    2. linkedin-only evidence
+    3. both sources
+    4. neither source (graceful degradation)
+    """
+
+    def test_mapper_website_only(self) -> None:
+        """Website JSON-LD + text populates Section 1 (overview, KV) & Section 3 (product)."""
+        evidence = Evidence(
+            website_pages=[
+                PageContent(
+                    url="https://acme.com",
+                    title="Acme - Smart Energy Solutions",
+                    description="Acme builds smart energy monitors for microgrids.",
+                    text="About us: We develop intelligent IoT hardware controllers and cloud software for energy optimization.",
+                    json_ld=[{
+                        "@type": "Organization",
+                        "name": "Acme",
+                        "description": "Acme builds smart energy monitors for microgrids.",
+                        "foundingDate": "2020-05-01",
+                        "knowsAbout": ["CleanTech", "Energy"],
+                        "address": {"addressLocality": "Austin", "addressCountry": "US"},
+                        "numberOfEmployees": "25",
+                    }],
+                ),
+                PageContent(
+                    url="https://acme.com/products",
+                    title="Acme Products & Platforms",
+                    description="Flagship hardware controller for industrial loads.",
+                    text="The Acme Controller optimizes power demand in commercial buildings.",
+                ),
+            ],
+            sources=[
+                EvidenceSource(
+                    source_id="src_001",
+                    url="https://acme.com",
+                    publisher="acme.com",
+                    source_type="COMPANY_WEBSITE",
+                ),
+            ],
+        )
+
+        result = build_canonical_report(evidence, "Acme", ["Alice"])
+        check_version_gate(result)
+        validate_raw_report_json(result)
+
+        sections = result["canonical"]["content"]["sections"]
+        company_sec = next(s for s in sections if s["key"] == "company")
+        product_sec = next(s for s in sections if s["key"] == "product")
+
+        # 1. Overview populated from website
+        overview_block = next(b for b in company_sec["blocks"] if b[1] == "What the company does")
+        assert "Acme builds smart energy monitors" in overview_block[2]
+
+        # 2. KV profile populated from JSON-LD
+        kv_block = next(b for b in company_sec["blocks"] if b[1] == "Company profile")
+        kv_dict = dict(kv_block[2])
+        assert kv_dict.get("Sector") == "CleanTech, Energy"
+        assert kv_dict.get("Headquarters") == "Austin, US"
+        assert kv_dict.get("Founded") == "2020"
+        assert kv_dict.get("Company size") == "25"
+
+        # 3. Product section populated from product page
+        prod_block = next(b for b in product_sec["blocks"] if b[1] == "Product overview")
+        assert "Acme Controller" in prod_block[2] or "hardware controller" in prod_block[2]
+
+        # 4. Gaps check: NO metadata notices or cutoffs in gaps
+        for sec in sections:
+            for b in sec["blocks"]:
+                if b[0] == "list" and "Information gaps" in b[1]:
+                    for gap in b[2]:
+                        assert "Research cutoff" not in gap
+                        assert "auto-generated" not in gap
+
+        # 5. Actions check: NO metadata notices in action items
+        for action in result["canonical"]["content"]["actions"]:
+            assert "Research cutoff" not in action["text"]
+            assert "auto-generated" not in action["text"]
+
+    def test_mapper_linkedin_only(self) -> None:
+        """LinkedIn company profile and founder profiles populate Section 1 & Section 2."""
+        evidence = Evidence(
+            company_profile=CompanyProfile(
+                name="Acme Corp",
+                description="Next-generation cloud infrastructure orchestration.",
+                industry="Cloud Computing",
+                headquarters="San Francisco, CA",
+                founded_year="2021",
+                company_size="11-50 employees",
+            ),
+            founder_profiles=[
+                PersonProfile(
+                    name="Alice",
+                    headline="Founder & CEO at Acme Corp",
+                    summary="10 years leading engineering teams in distributed systems.",
+                ),
+            ],
+            sources=[
+                EvidenceSource(
+                    source_id="src_001",
+                    url="https://linkedin.com/company/acme",
+                    publisher="linkedin.com",
+                    source_type="SOCIAL_MEDIA",
+                ),
+            ],
+        )
+
+        result = build_canonical_report(evidence, "Acme Corp", ["Alice"])
+        check_version_gate(result)
+        validate_raw_report_json(result)
+
+        sections = result["canonical"]["content"]["sections"]
+        company_sec = next(s for s in sections if s["key"] == "company")
+        team_sec = next(s for s in sections if s["key"] == "team")
+
+        # Overview populated from LinkedIn
+        overview_block = next(b for b in company_sec["blocks"] if b[1] == "What the company does")
+        assert "cloud infrastructure" in overview_block[2]
+
+        # KV populated from LinkedIn
+        kv_block = next(b for b in company_sec["blocks"] if b[1] == "Company profile")
+        kv_dict = dict(kv_block[2])
+        assert kv_dict.get("Sector") == "Cloud Computing"
+        assert kv_dict.get("Headquarters") == "San Francisco, CA"
+        assert kv_dict.get("Founded") == "2021"
+
+        # Team founder card
+        founder_card = team_sec["blocks"][1][2][0]
+        assert founder_card["name"] == "Alice"
+        assert "Founder & CEO" in founder_card["role"]
+
+    def test_mapper_both(self) -> None:
+        """When both LinkedIn and website evidence are present, merged precedence applies."""
+        evidence = Evidence(
+            company_profile=CompanyProfile(
+                name="Acme Corp",
+                description="LinkedIn high-level overview.",
+                industry="Enterprise Software",
+                headquarters="Boston, MA",
+            ),
+            founder_profiles=[
+                PersonProfile(name="Alice", headline="CEO"),
+            ],
+            website_pages=[
+                PageContent(
+                    url="https://acme.com",
+                    title="Acme Corp Home",
+                    description="Website description.",
+                    text="We build enterprise orchestration software.",
+                    json_ld=[{
+                        "@type": "Organization",
+                        "foundingDate": "2019",
+                        "numberOfEmployees": "50-100",
+                    }],
+                ),
+                PageContent(
+                    url="https://acme.com/product",
+                    title="Platform",
+                    description="Cloud SaaS platform.",
+                    text="The Acme Cloud SaaS platform coordinates microservices.",
+                ),
+            ],
+        )
+
+        result = build_canonical_report(evidence, "Acme Corp", ["Alice"])
+        check_version_gate(result)
+        validate_raw_report_json(result)
+
+        sections = result["canonical"]["content"]["sections"]
+        company_sec = next(s for s in sections if s["key"] == "company")
+        kv_dict = dict(next(b for b in company_sec["blocks"] if b[1] == "Company profile")[2])
+
+        # LinkedIn supplied Sector and HQ
+        assert kv_dict.get("Sector") == "Enterprise Software"
+        assert kv_dict.get("Headquarters") == "Boston, MA"
+        # Website supplied Founded and Company size
+        assert kv_dict.get("Founded") == "2019"
+        assert kv_dict.get("Company size") == "50-100"
+
+    def test_mapper_neither(self) -> None:
+        """Graceful degradation with zero sources: clean gaps, valid schema, no fake gaps."""
+        evidence = Evidence()
+        result = build_canonical_report(evidence, "GhostCo", ["Casper"])
+        check_version_gate(result)
+        validate_raw_report_json(result)
+
+        sections = result["canonical"]["content"]["sections"]
+        company_sec = next(s for s in sections if s["key"] == "company")
+        overview_block = next(b for b in company_sec["blocks"] if b[1] == "What the company does")
+        assert overview_block[2] == "Not established from public sources."
+
+        # Verify gaps are real field gaps only
+        gaps_block = next(b for b in company_sec["blocks"] if b[1] == "Information gaps")
+        gaps = gaps_block[2]
+        assert len(gaps) >= 4
+        for g in gaps:
+            assert "Research cutoff" not in g
+            assert "auto-generated" not in g
+            assert any(kw in g.lower() for kw in ["overview", "sector", "headquarters", "founding", "size"])
+
+    def test_founder_roles_unverified_vs_verified(self) -> None:
+        """Never label user-typed founder as Co-founder without evidence. Cite role sources."""
+        evidence = Evidence(
+            founder_profiles=[
+                PersonProfile(
+                    name="Arpita Kapoor",
+                    headline="CEO at Mysa",
+                    url="https://linkedin.com/in/arpitakapoor",
+                ),
+            ],
+            website_pages=[
+                PageContent(
+                    url="https://mysa.io/team",
+                    title="Mysa Team",
+                    description="Leadership team at Mysa",
+                    text="Mohit Rangaraju leads product strategy at Mysa.",
+                ),
+            ],
+        )
+
+        result = build_canonical_report(
+            evidence,
+            "Mysa",
+            ["Arpita Kapoor", "Mohit Rangaraju", "Ashutosh Panigrahi"],
+        )
+        check_version_gate(result)
+        validate_raw_report_json(result)
+
+        sections = result["canonical"]["content"]["sections"]
+        team_sec = next(s for s in sections if s["key"] == "team")
+        cards = next(b for b in team_sec["blocks"] if b[0] == "cards")[2]
+
+        # 1. Arpita Kapoor: verified via LinkedIn headline
+        arpita = next(c for c in cards if c["name"] == "Arpita Kapoor")
+        assert arpita["role"] == "CEO at Mysa"
+        arpita_lines = dict(arpita["lines"])
+        assert "LinkedIn profile (https://linkedin.com/in/arpitakapoor)" in arpita_lines.get("Role source", "")
+
+        # 2. Mohit Rangaraju: verified via website mention
+        mohit = next(c for c in cards if c["name"] == "Mohit Rangaraju")
+        assert mohit["role"] == "Founder (from company website)"
+        mohit_lines = dict(mohit["lines"])
+        assert "Company website: https://mysa.io/team" in mohit_lines.get("Role source", "")
+
+        # 3. Ashutosh Panigrahi: unverified user input -> must be 'Founder (provided by user)'
+        ashutosh = next(c for c in cards if c["name"] == "Ashutosh Panigrahi")
+        assert ashutosh["role"] == "Founder (provided by user)"
+        assert "Co-founder" not in ashutosh["role"]
+        ashutosh_lines = dict(ashutosh["lines"])
+        assert ashutosh_lines.get("Role source") == "Provided by user (unverified)"
+        assert "could not be corroborated" in ashutosh["fit"]
+
+    def test_unverified_founder_background_emits_actionable_dd_requirements(self) -> None:
+        """Unverified founder education and experience must appear as actionable DD requirements under Information to prepare."""
+        evidence = Evidence(
+            website_pages=[
+                PageContent(
+                    url="https://mysa.io",
+                    title="Mysa",
+                    description="Finance automation for enterprises",
+                    text="We build accounts payable software for finance teams.",
+                ),
+            ],
+        )
+
+        result = build_canonical_report(
+            evidence,
+            "Mysa",
+            ["Arpita Kapoor", "Mohit Rangaraju"],
+        )
+
+        content = result["canonical"]["content"]
+        act_reqs = content.get("action_requirements", {})
+
+        # 1. Action requirements topics should contain Team & founders DD requests
+        topics = act_reqs.get("topics", [])
+        team_topic = next((t for t in topics if t["topic"] == "Team & founders"), None)
+        assert team_topic is not None
+        items = team_topic["items"]
+        assert any("Arpita Kapoor" in it["text"] and "resume" in it["text"].lower() for it in items)
+        assert any("Arpita Kapoor" in it["text"] and "academic" in it["text"].lower() for it in items)
+        assert any("Mohit Rangaraju" in it["text"] and "resume" in it["text"].lower() for it in items)
+
+        # 2. Documents should include Team & key personnel priority items
+        docs = act_reqs.get("documents", [])
+        team_doc = next((d for d in docs if "Team" in d["group"]), None)
+        assert team_doc is not None
+        assert any("resumes" in p.lower() for p in team_doc["priority"])
+
+    def test_grounding_case_study_urls_and_marketing_claims(self) -> None:
+        """Customers from URL slugs are labelled low-confidence and marketing claims are marked unverified."""
+        evidence = Evidence(
+            website_pages=[
+                PageContent(
+                    url="https://mysa.io",
+                    title="Mysa",
+                    description="Accounts payable for finance teams",
+                    text="Loved by 1000+ CFOs.\nHow goSTOPS Manages 500+ Invoices monthly.",
+                    links=["https://mysa.io/customers/vaaree", "https://mysa.io/customers/hanto"],
+                ),
+            ],
+        )
+
+        result = build_canonical_report(evidence, "Mysa", ["Arpita Kapoor"])
+        sections = result["canonical"]["content"]["sections"]
+        val_sec = next(s for s in sections if s["key"] == "validation")
+        blocks = val_sec["blocks"]
+
+        # Case studies block: Vaaree and Hanto must be labelled case-study URL
+        signals_block = next((b for b in blocks if "Named customer case studies" in str(b[1])), None)
+        assert signals_block is not None
+        signals_text = " ".join(signals_block[2])
+        assert "goSTOPS" in signals_text
+        assert "Vaaree (case-study URL)" in signals_text
+        assert "Hanto (case-study URL)" in signals_text
+
+        # Marketing claims block: Loved by 1000+ CFOs must be present and marked unverified
+        mktg_block = next((b for b in blocks if "Marketing metrics" in str(b[1])), None)
+        assert mktg_block is not None
+        mktg_text = " ".join(mktg_block[2])
+        assert "Loved by 1000+ CFOs" in mktg_text
+        assert "company-stated, unverified" in mktg_text

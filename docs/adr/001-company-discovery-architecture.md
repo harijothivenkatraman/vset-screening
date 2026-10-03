@@ -25,7 +25,14 @@ The application runs on resource-constrained infrastructure (AWS Lightsail with 
    - Job store (`InMemoryJobStore`) is bounded (max 20 jobs) to respect strict 412MB RAM limits on Lightsail.
    - Page downloads are capped at 2MB with content-type verification.
 
+4. **LinkedIn Best-Effort & Datacenter vs. Residential IP Policy**:
+   - LinkedIn public profile extraction relies on public Schema.org JSON-LD and OpenGraph tags, which parse cleanly from residential IPs.
+   - Datacenter IPs (such as AWS Lightsail, EC2, GCP) are immediately presented with Cloudflare challenges (HTTP 403, `challenges.cloudflare.com`). The system strictly forbids attempting to solve or bypass challenges.
+   - LinkedIn is treated as best-effort: failures yield outcome `blocked_by_bot_protection` with no retries beyond one. A circuit breaker pauses LinkedIn calls for 30 minutes after 3 consecutive blocks (`circuit_breaker_open`), and Tab 9 limitations plainly declare `"LinkedIn could not be retrieved from this server."`
+   - When LinkedIn is unavailable, the pipeline falls back to deep website extraction (sitemap, /team, /about), ICANN RDAP registration date, structured news/GDELT, and user-supplied manual evidence.
+
 ## Consequences
 - Clean separation of concerns allows swapping search providers, scrapers, or LLMs via configuration without rewriting application logic.
 - Automated architecture test (`test_architecture.py`) ensures no outer layer leaks into domain or application layers.
-- System is resilient to external network outages and strict hosting constraints.
+- Production deployments on Lightsail remain reliable and transparent when datacenter bot protection blocks LinkedIn, without stalling jobs or generating false failures.
+

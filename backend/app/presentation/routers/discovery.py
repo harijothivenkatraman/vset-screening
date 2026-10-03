@@ -42,6 +42,7 @@ from app.presentation.schemas.discovery import (
     ResolveCandidatesResponse,
     StartDiscoveryJobRequest,
     StartDiscoveryJobResponse,
+    SourceDiagnosticSchema,
 )
 
 logger = logging.getLogger(__name__)
@@ -137,6 +138,7 @@ async def start_discovery_job(
     service: StartDiscoveryJobService = Depends(get_start_discovery_job_service),
     build_service: BuildReportService = Depends(get_build_report_service),
     job_store: JobStorePort = Depends(get_job_store_port),
+    llm: LlmPort = Depends(get_llm_port),
 ) -> StartDiscoveryJobResponse:
     """Enqueues a background discovery job. Returns 202 Accepted with job ID."""
     # 1. Disk space guard
@@ -157,6 +159,21 @@ async def start_discovery_job(
             detail=f"Rate limit exceeded: maximum {settings.DISCOVERY_RATE_LIMIT_PER_HOUR} discovery jobs per hour.",
         )
 
+    # 2b. Verify LLM model availability on inference server
+    if settings.DISCOVERY_ENABLED and not request.skip_llm_validation:
+        try:
+            if hasattr(llm, "check_availability"):
+                avail = await llm.check_availability()
+                if not avail.get("model_available", False):
+                    raise HTTPException(
+                        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                        detail=f"LLM model '{settings.LLM_MODEL}' is not available on the inference server. Build report is disabled until the model is loaded.",
+                    )
+        except HTTPException:
+            raise
+        except Exception as exc:
+            logger.warning("LLM availability check failed during job submission: %s", exc)
+
     # 3. Create job entity
     try:
         res = await service.execute(
@@ -164,6 +181,8 @@ async def start_discovery_job(
                 company_name=request.company_name,
                 founder_names=request.founder_names,
                 confirmed_urls=request.confirmed_urls,
+                search_snippets=request.search_snippets,
+                manual_evidence={k: v.model_dump() for k, v in request.manual_evidence.items()},
             )
         )
     except DiscoveryDisabledError as exc:
@@ -203,6 +222,16 @@ async def get_job_status(
             warnings=status_dto.warnings,
             result_slug=status_dto.result_slug,
             error_message=status_dto.error_message,
+            diagnostics=[
+                SourceDiagnosticSchema(
+                    url=d.url,
+                    outcome=d.outcome,
+                    bytes_fetched=d.bytes_fetched,
+                    fields_extracted=d.fields_extracted,
+                    error_details=d.error_details,
+                )
+                for d in status_dto.diagnostics
+            ],
         )
     except JobNotFoundError:
         raise HTTPException(
@@ -221,19 +250,28 @@ async def discovery_health(
 ) -> DiscoveryHealthResponse:
     """Public probe to check readiness of discovery components and LLM server."""
     is_llm_ok = False
+    is_model_ok = False
     try:
-        is_llm_ok = await llm.is_available()
+        if hasattr(llm, "check_availability"):
+            avail = await llm.check_availability()
+            is_llm_ok = avail.get("reachable", False)
+            is_model_ok = avail.get("model_available", False)
+        else:
+            is_llm_ok = await llm.is_available()
+            is_model_ok = is_llm_ok
     except Exception:
         is_llm_ok = False
+        is_model_ok = False
 
     free_gb = _get_free_disk_gb()
 
-    status_str = "healthy" if (is_llm_ok or not settings.DISCOVERY_ENABLED) else "degraded"
+    status_str = "healthy" if (is_model_ok or not settings.DISCOVERY_ENABLED) else "degraded"
 
     return DiscoveryHealthResponse(
         status=status_str,
         discovery_enabled=settings.DISCOVERY_ENABLED,
         llm_reachable=is_llm_ok,
+        model_available=is_model_ok,
         llm_model=settings.LLM_MODEL,
         search_providers=settings.SEARCH_PROVIDERS,
         free_disk_gb=round(free_gb, 2),

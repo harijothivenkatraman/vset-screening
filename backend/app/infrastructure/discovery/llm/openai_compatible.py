@@ -67,11 +67,24 @@ class OpenAICompatibleLlmAdapter(LlmPort):
             raise LlmUnavailableError(self._base_url, str(exc)) from exc
 
     async def is_available(self) -> bool:
-        """Ping /models endpoint to verify LLM server reachability."""
+        """Ping /models endpoint to verify LLM server reachability and configured model presence."""
+        avail = await self.check_availability()
+        return avail.get("reachable", False) and avail.get("model_available", False)
+
+    async def check_availability(self) -> dict[str, bool]:
+        """Check server reachability and model presence separately."""
         endpoint = f"{self._base_url}/models"
         try:
             async with httpx.AsyncClient(timeout=3.0) as client:
                 resp = await client.get(endpoint)
-                return resp.status_code == 200
+                if resp.status_code != 200:
+                    return {"reachable": False, "model_available": False}
+                try:
+                    data = resp.json()
+                except Exception:
+                    data = {}
+                models = [m.get("id") for m in data.get("data", []) if isinstance(m, dict)]
+                model_present = any(self._model == m or self._model in str(m) for m in models) if models else False
+                return {"reachable": True, "model_available": model_present}
         except Exception:
-            return False
+            return {"reachable": False, "model_available": False}

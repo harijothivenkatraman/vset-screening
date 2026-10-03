@@ -216,12 +216,21 @@ def get_discovery_job_service(
     return GetDiscoveryJobService(job_store=job_store)
 
 
+from app.application.ports.evidence_source_port import EvidenceRegistryPort
+from app.infrastructure.discovery.sources.registry import EvidenceSourceRegistry
+
+
+def get_evidence_registry_port() -> EvidenceRegistryPort:
+    return EvidenceSourceRegistry()
+
+
 def get_build_report_service(
     job_store: JobStorePort = Depends(get_job_store_port),
     profile_scraper: ProfileScraperPort = Depends(get_profile_scraper_port),
     page_fetcher: PageFetcherPort = Depends(get_page_fetcher_port),
     report_extractor: ReportExtractorPort = Depends(get_report_extractor_port),
     report_import: ReportImportPort = Depends(get_report_import_port),
+    source_registry: EvidenceRegistryPort = Depends(get_evidence_registry_port),
 ) -> BuildReportService:
     return BuildReportService(
         job_store=job_store,
@@ -229,4 +238,6 @@ def get_build_report_service(
         page_fetcher=page_fetcher,
         report_extractor=report_extractor,
         report_import=report_import,
+        source_registry=source_registry,
     )
+

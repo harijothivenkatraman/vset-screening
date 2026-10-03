@@ -29,16 +29,33 @@ class ResolveCandidatesResponse(BaseModel):
     error_message: str | None = None
 
 
+class ManualEvidenceItemSchema(BaseModel):
+    text: str | None = None
+    pdf_base64: str | None = None
+    pdf_filename: str | None = None
+
+
 class StartDiscoveryJobRequest(BaseModel):
     company_name: str = Field(min_length=1)
     founder_names: list[str] = Field(min_length=1)
     confirmed_urls: dict[str, str] = Field(default_factory=dict)
+    search_snippets: dict[str, str] = Field(default_factory=dict)
+    manual_evidence: dict[str, ManualEvidenceItemSchema] = Field(default_factory=dict)
+    skip_llm_validation: bool = False
 
 
 class StartDiscoveryJobResponse(BaseModel):
     job_id: str
     state: str
     message: str
+
+
+class SourceDiagnosticSchema(BaseModel):
+    url: str
+    outcome: str
+    bytes_fetched: int = 0
+    fields_extracted: list[str] = Field(default_factory=list)
+    error_details: str | None = None
 
 
 class DiscoveryJobStatusResponse(BaseModel):
@@ -50,12 +67,14 @@ class DiscoveryJobStatusResponse(BaseModel):
     warnings: list[str]
     result_slug: str | None = None
     error_message: str | None = None
+    diagnostics: list[SourceDiagnosticSchema] = Field(default_factory=list)
 
 
 class DiscoveryHealthResponse(BaseModel):
     status: str
     discovery_enabled: bool
     llm_reachable: bool
+    model_available: bool = True
     llm_model: str
     search_providers: list[str]
     free_disk_gb: float

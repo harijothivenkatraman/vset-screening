@@ -5,6 +5,7 @@ import inspect
 import pytest
 
 from app.application.ports.cache_port import CachePort
+from app.application.ports.evidence_source_port import EvidenceSourcePort
 from app.application.ports.job_store_port import JobStorePort
 from app.application.ports.llm_port import LlmPort
 from app.application.ports.page_fetcher_port import PageFetcherPort
@@ -12,6 +13,10 @@ from app.application.ports.profile_scraper_port import ProfileScraperPort
 from app.application.ports.report_extractor_port import ReportExtractorPort
 from app.application.ports.report_import_port import ReportImportPort
 from app.application.ports.web_search_port import WebSearchPort
+from app.infrastructure.discovery.sources.news import NewsSource
+from app.infrastructure.discovery.sources.rdap import RdapSource
+from app.infrastructure.discovery.sources.wayback import WaybackSource
+from app.infrastructure.discovery.sources.wikidata import WikidataSource
 
 from app.infrastructure.discovery.cache.ttl_cache import InMemoryTtlCache
 from app.infrastructure.discovery.jobs.in_memory_job_store import InMemoryJobStore
@@ -129,3 +134,16 @@ class TestPortContracts:
     )
     def test_report_import_port_contract(self, adapter_cls: type) -> None:
         _assert_implements_interface(adapter_cls, ReportImportPort)
+
+    @pytest.mark.parametrize(
+        "adapter_cls",
+        [
+            RdapSource,
+            WikidataSource,
+            NewsSource,
+            WaybackSource,
+        ],
+    )
+    def test_evidence_source_port_contract(self, adapter_cls: type) -> None:
+        _assert_implements_interface(adapter_cls, EvidenceSourcePort)
+

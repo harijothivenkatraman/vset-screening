@@ -135,10 +135,41 @@ class TestLinkedInPublicScraper:
     async def test_authwall_detection(self) -> None:
         scraper = LinkedInPublicScraper(rate_limiter=HostRateLimiter(min_interval_seconds=0))
 
-        with patch.object(scraper, "_fetch_html", return_value=(999, "https://linkedin.com/authwall", "Sign In", True)):
-            profile = await scraper.fetch_company("https://linkedin.com/company/secret")
+        with patch.object(scraper, "_fetch_html", return_value=(999, "https://linkedin.com/authwall", "Sign In", True, False)):
+            profile, diag = await scraper.fetch_company_with_diagnostic("https://linkedin.com/company/secret")
             assert profile is not None
             assert profile.is_auth_walled is True
+            assert diag.outcome == "auth_wall"
+
+    async def test_bot_protection_detection(self) -> None:
+        from app.infrastructure.discovery.scrapers.linkedin_public import LinkedInCircuitBreaker
+        breaker = LinkedInCircuitBreaker(failure_threshold=3)
+        scraper = LinkedInPublicScraper(rate_limiter=HostRateLimiter(min_interval_seconds=0), circuit_breaker=breaker)
+
+        html_cf = "<html><head><title>Just a moment...</title></head><body>challenges.cloudflare.com</body></html>"
+        with patch.object(scraper, "_fetch_html", return_value=(403, "https://linkedin.com/company/blocked", html_cf, True, True)):
+            profile, diag = await scraper.fetch_company_with_diagnostic("https://linkedin.com/company/blocked")
+            assert profile is not None
+            assert profile.is_auth_walled is True
+            assert diag.outcome == "blocked_by_bot_protection"
+            assert "Cloudflare" in (diag.error_details or "")
+
+    async def test_circuit_breaker_opens_after_3_blocks(self) -> None:
+        from app.infrastructure.discovery.scrapers.linkedin_public import LinkedInCircuitBreaker
+        breaker = LinkedInCircuitBreaker(failure_threshold=3, cooldown_seconds=1800.0)
+        scraper = LinkedInPublicScraper(rate_limiter=HostRateLimiter(min_interval_seconds=0), circuit_breaker=breaker)
+
+        html_cf = "Just a moment... challenges.cloudflare.com"
+        with patch.object(scraper, "_fetch_html", return_value=(403, "https://linkedin.com/company/blocked", html_cf, True, True)):
+            # 3 consecutive blocks
+            for _ in range(3):
+                _, diag = await scraper.fetch_company_with_diagnostic("https://linkedin.com/company/blocked")
+                assert diag.outcome == "blocked_by_bot_protection"
+
+            # 4th call: circuit breaker is open!
+            _, diag4 = await scraper.fetch_company_with_diagnostic("https://linkedin.com/company/blocked")
+            assert diag4.outcome == "circuit_breaker_open"
+            assert "circuit breaker open" in (diag4.error_details or "")
 
 
 class TestWebsiteFetcher:

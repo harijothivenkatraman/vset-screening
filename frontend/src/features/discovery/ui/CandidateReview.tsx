@@ -3,7 +3,8 @@ import { ArrowLeft, CheckCircle2, ExternalLink, Sparkles, AlertTriangle } from "
 import { Badge } from "@/shared/ui/Badge";
 import { Button } from "@/shared/ui/Button";
 import { Card } from "@/shared/ui/Card";
-import { CandidateItem, ResolveCandidatesResponse } from "../types";
+import { CandidateItem, ManualEvidenceItem, ResolveCandidatesResponse } from "../types";
+import { useDiscoveryHealth } from "../hooks";
 
 interface CandidateReviewProps {
   companyName: string;
@@ -11,7 +12,7 @@ interface CandidateReviewProps {
   resolveData: ResolveCandidatesResponse;
   isStarting: boolean;
   onBack: () => void;
-  onConfirm: (confirmedUrls: Record<string, string>) => void;
+  onConfirm: (confirmedUrls: Record<string, string>, manualEvidence?: Record<string, ManualEvidenceItem>) => void;
 }
 
 export const CandidateReview: React.FC<CandidateReviewProps> = ({
@@ -22,6 +23,8 @@ export const CandidateReview: React.FC<CandidateReviewProps> = ({
   onBack,
   onConfirm,
 }) => {
+  const { data: health } = useDiscoveryHealth();
+  const isModelMissing = health?.model_available === false;
   // Initialize confirmed URLs from best candidates
   const [confirmedUrls, setConfirmedUrls] = useState<Record<string, string>>(() => {
     const initial: Record<string, string> = {};
@@ -32,6 +35,8 @@ export const CandidateReview: React.FC<CandidateReviewProps> = ({
     }
     return initial;
   });
+
+  const [manualEvidence, setManualEvidence] = useState<Record<string, ManualEvidenceItem>>({});
 
   const handleUrlChange = (category: string, url: string) => {
     setConfirmedUrls((prev) => ({
@@ -47,9 +52,63 @@ export const CandidateReview: React.FC<CandidateReviewProps> = ({
     }));
   };
 
+  const handleManualTextChange = (category: string, text: string) => {
+    setManualEvidence((prev) => {
+      const existing = prev[category] || {};
+      const updated = { ...existing, text };
+      if (!text.trim() && !updated.pdf_base64) {
+        const copy = { ...prev };
+        delete copy[category];
+        return copy;
+      }
+      return { ...prev, [category]: updated };
+    });
+  };
+
+  const handleManualPdfUpload = (category: string, file: File | null) => {
+    if (!file) {
+      setManualEvidence((prev) => {
+        const existing = prev[category];
+        if (!existing) return prev;
+        const { pdf_base64, pdf_filename, ...rest } = existing;
+        if (!rest.text || !rest.text.trim()) {
+          const copy = { ...prev };
+          delete copy[category];
+          return copy;
+        }
+        return { ...prev, [category]: rest };
+      });
+      return;
+    }
+
+    if (file.size > 2 * 1024 * 1024) {
+      alert("PDF file size must be under 2 MB.");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      const base64 = result.includes(",") ? result.split(",")[1] : result;
+      setManualEvidence((prev) => ({
+        ...prev,
+        [category]: {
+          ...(prev[category] || {}),
+          pdf_base64: base64,
+          pdf_filename: file.name,
+        },
+      }));
+    };
+    reader.readAsDataURL(file);
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onConfirm(confirmedUrls);
+    if (Object.keys(manualEvidence).length > 0) {
+      onConfirm(confirmedUrls, manualEvidence);
+    } else {
+      onConfirm(confirmedUrls);
+    }
   };
 
   return (
@@ -101,8 +160,11 @@ export const CandidateReview: React.FC<CandidateReviewProps> = ({
           categoryKey="company_linkedin"
           candidates={resolveData.candidates["company_linkedin"] || []}
           selectedUrl={confirmedUrls["company_linkedin"] || ""}
+          manualItem={manualEvidence["company_linkedin"]}
           onSelect={(c) => handleSelectCandidate("company_linkedin", c)}
           onChangeUrl={(url) => handleUrlChange("company_linkedin", url)}
+          onManualTextChange={(text) => handleManualTextChange("company_linkedin", text)}
+          onManualPdfChange={(file) => handleManualPdfUpload("company_linkedin", file)}
           placeholder="https://www.linkedin.com/company/..."
         />
 
@@ -117,8 +179,11 @@ export const CandidateReview: React.FC<CandidateReviewProps> = ({
               categoryKey={catKey}
               candidates={resolveData.candidates[catKey] || []}
               selectedUrl={confirmedUrls[catKey] || ""}
+              manualItem={manualEvidence[catKey]}
               onSelect={(c) => handleSelectCandidate(catKey, c)}
               onChangeUrl={(url) => handleUrlChange(catKey, url)}
+              onManualTextChange={(text) => handleManualTextChange(catKey, text)}
+              onManualPdfChange={(file) => handleManualPdfUpload(catKey, file)}
               placeholder={`https://www.linkedin.com/in/... (${name})`}
             />
           );
@@ -131,8 +196,11 @@ export const CandidateReview: React.FC<CandidateReviewProps> = ({
           categoryKey="website"
           candidates={resolveData.candidates["website"] || []}
           selectedUrl={confirmedUrls["website"] || ""}
+          manualItem={manualEvidence["website"]}
           onSelect={(c) => handleSelectCandidate("website", c)}
           onChangeUrl={(url) => handleUrlChange("website", url)}
+          onManualTextChange={(text) => handleManualTextChange("website", text)}
+          onManualPdfChange={(file) => handleManualPdfUpload("website", file)}
           placeholder="https://example.com"
         />
 
@@ -180,7 +248,7 @@ export const CandidateReview: React.FC<CandidateReviewProps> = ({
             Cancel
           </Button>
 
-          <Button type="submit" disabled={isStarting} size="lg">
+          <Button type="submit" disabled={isStarting || isModelMissing} size="lg">
             {isStarting ? (
               <span className="flex items-center gap-2">
                 <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
@@ -194,6 +262,15 @@ export const CandidateReview: React.FC<CandidateReviewProps> = ({
             )}
           </Button>
         </div>
+
+        {isModelMissing && (
+          <div className="p-3 bg-amber-50 border border-amber-200 rounded-md text-amber-800 text-xs flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600" />
+            <span>
+              LLM model not found on inference server ({health?.llm_model || "qwen2.5:7b-instruct"}). Load the model to assemble reports.
+            </span>
+          </div>
+        )}
       </form>
     </div>
   );
@@ -206,8 +283,11 @@ interface ReviewCategorySectionProps {
   candidates: CandidateItem[];
   selectedUrl: string;
   placeholder: string;
+  manualItem?: ManualEvidenceItem;
   onSelect: (candidate: CandidateItem) => void;
   onChangeUrl: (url: string) => void;
+  onManualTextChange?: (text: string) => void;
+  onManualPdfChange?: (file: File | null) => void;
 }
 
 const ReviewCategorySection: React.FC<ReviewCategorySectionProps> = ({
@@ -216,8 +296,11 @@ const ReviewCategorySection: React.FC<ReviewCategorySectionProps> = ({
   candidates,
   selectedUrl,
   placeholder,
+  manualItem,
   onSelect,
   onChangeUrl,
+  onManualTextChange,
+  onManualPdfChange,
 }) => {
   return (
     <Card className="p-5 border border-slate-200 space-y-3">
@@ -287,6 +370,53 @@ const ReviewCategorySection: React.FC<ReviewCategorySectionProps> = ({
           placeholder={placeholder}
           className="w-full px-3 py-1.5 text-xs font-mono border border-slate-300 rounded focus:outline-none focus:ring-1 focus:ring-[#1e2a3a] bg-white text-slate-900"
         />
+      </div>
+
+      {/* Manual evidence input (unverified) */}
+      <div className="pt-3 border-t border-slate-100 space-y-2">
+        <div className="flex items-center justify-between">
+          <span className="text-[11px] font-semibold text-slate-600 uppercase tracking-wider">
+            Provide evidence manually (optional)
+          </span>
+          <Badge variant="navy" className="text-[10px] py-0.5 px-2">
+            provided by user (unverified)
+          </Badge>
+        </div>
+        <p className="text-[11px] text-slate-500">
+          Paste profile text or upload an exported PDF if bot protection blocks this profile.
+        </p>
+        <textarea
+          value={manualItem?.text || ""}
+          onChange={(e) => onManualTextChange?.(e.target.value)}
+          placeholder="Paste profile text, career history, education, or bio..."
+          rows={2}
+          className="w-full px-3 py-1.5 text-xs font-sans border border-slate-300 rounded focus:outline-none focus:ring-1 focus:ring-[#1e2a3a] bg-white text-slate-900"
+        />
+        <div className="flex items-center gap-3">
+          <label className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded border border-slate-300 cursor-pointer transition-colors">
+            <span>{manualItem?.pdf_filename ? "Replace PDF" : "Upload Profile PDF"}</span>
+            <input
+              type="file"
+              accept=".pdf,application/pdf"
+              className="hidden"
+              onChange={(e) => onManualPdfChange?.(e.target.files?.[0] || null)}
+            />
+          </label>
+          {manualItem?.pdf_filename && (
+            <div className="flex items-center gap-1.5 text-xs text-slate-600">
+              <span className="font-mono text-[11px] truncate max-w-xs">{manualItem.pdf_filename}</span>
+              <button
+                type="button"
+                onClick={() => onManualPdfChange?.(null)}
+                className="text-red-500 hover:text-red-700 text-xs ml-1 cursor-pointer font-bold"
+                title="Remove PDF"
+              >
+                ×
+              </button>
+            </div>
+          )}
+          <span className="text-[10px] text-slate-400">Max 2 MB (parsed without OCR)</span>
+        </div>
       </div>
     </Card>
   );

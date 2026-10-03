@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 from app.application.ports.job_store_port import JobStorePort
@@ -15,6 +15,8 @@ class StartJobInput:
     company_name: str
     founder_names: list[str]
     confirmed_urls: dict[str, str]  # category -> confirmed URL
+    search_snippets: dict[str, str] = field(default_factory=dict)
+    manual_evidence: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -62,6 +64,8 @@ class StartDiscoveryJobService:
             created_at=now,
             updated_at=now,
             confirmed_urls=input_dto.confirmed_urls,
+            search_snippets=input_dto.search_snippets,
+            manual_evidence=input_dto.manual_evidence,
         )
         
         await self._job_store.create(job)

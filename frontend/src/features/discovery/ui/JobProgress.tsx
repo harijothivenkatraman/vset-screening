@@ -8,6 +8,7 @@ import {
   RotateCcw,
   Sparkles,
   AlertTriangle,
+  Activity,
 } from "lucide-react";
 import { Button } from "@/shared/ui/Button";
 import { Card } from "@/shared/ui/Card";
@@ -131,6 +132,67 @@ export const JobProgress: React.FC<JobProgressProps> = ({ jobId, onReset }) => {
           })}
         </div>
       </div>
+
+      {/* Retrieval Log (per-source diagnostics) */}
+      {job.diagnostics && job.diagnostics.length > 0 && (
+        <div className="p-4 bg-slate-50 rounded-lg border border-slate-200 space-y-2 text-xs">
+          <div className="flex items-center justify-between">
+            <span className="font-semibold text-slate-700 uppercase tracking-wider text-[10px] flex items-center gap-1.5">
+              <Activity className="w-3.5 h-3.5 text-slate-500" />
+              Retrieval Log ({job.diagnostics.length} sources attempted)
+            </span>
+          </div>
+          <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
+            {job.diagnostics.map((diag, idx) => {
+              const isOk = diag.outcome === "ok";
+              const isAuthWall = diag.outcome === "auth_wall";
+              const isRobots = diag.outcome === "robots_blocked";
+              const isSsrf = diag.outcome === "ssrf_blocked";
+
+              const badgeVariant = isOk ? "success" : isAuthWall || isRobots ? "warning" : "neutral";
+              const badgeLabel = isOk
+                ? "OK"
+                : isAuthWall
+                ? "Auth Wall"
+                : isRobots
+                ? "Robots.txt"
+                : isSsrf
+                ? "SSRF Blocked"
+                : diag.outcome;
+
+              return (
+                <div
+                  key={idx}
+                  className="flex flex-col sm:flex-row sm:items-center justify-between p-2 rounded bg-white border border-slate-200 gap-1.5"
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Badge variant={badgeVariant} className="text-[10px] px-1.5 py-0.5 shrink-0">
+                      {badgeLabel}
+                    </Badge>
+                    <span className="font-mono text-[11px] text-slate-700 truncate" title={diag.url}>
+                      {diag.url}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-3 text-[11px] text-slate-500 shrink-0">
+                    {diag.bytes_fetched > 0 && (
+                      <span className="tabular-nums">
+                        {(diag.bytes_fetched / 1024).toFixed(1)} KB
+                      </span>
+                    )}
+                    {diag.fields_extracted && diag.fields_extracted.length > 0 ? (
+                      <span className="text-emerald-700 font-medium">
+                        {diag.fields_extracted.join(", ")}
+                      </span>
+                    ) : (
+                      <span className="text-slate-400 italic">No fields</span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Warnings List if any */}
       {job.warnings && job.warnings.length > 0 && (

@@ -94,6 +94,7 @@ class TestDiscoveryJobLifecycle:
                     "confirmed_urls": {
                         "company_linkedin": "https://linkedin.com/company/orbit",
                     },
+                    "skip_llm_validation": True,
                 },
             )
             assert resp.status_code == 202

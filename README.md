@@ -8,7 +8,9 @@ A professional B2B platform presenting startup screening reports and automated *
 
 - **Standard 9-Tab Screening Dashboard**: Comprehensive startup analysis covering Company, Team, Product, Validation, Market, Competition, Funding, Actions (Due Diligence questions & documents), and Evidence Sources.
 - **Automated Company Discovery**: Input a company name and founder name(s) to harvest public footprints across LinkedIn, company websites, and news coverage.
-- **Strict Anti-Hallucination & Grounding**: Information not established from public sources is never fabricated; it is explicitly marked *"Not established from public sources"* and tracked under *"Information to prepare"*.
+- **Multi-Source Evidence Framework**: Pluggable Open/Closed architecture (`EvidenceSourcePort`, `EvidenceSourceRegistry`) querying keyless official APIs (Identity Digital / IANA RDAP for domain transfers & creation, Google News RSS for venture funding & stages, Wikidata with strict domain disambiguation, Wayback Machine historical snapshots) with concurrency bounds (semaphore=2, 2MB cap, per-source circuit breakers).
+- **Manual Evidence Provision ("Provide evidence manually")**: Support for pasting profile text or uploading LinkedIn PDF exports per entity with 2MB security bounds, script sanitization, and explicit `"provided by user (unverified)"` labelling.
+- **Strict Anti-Hallucination & Grounding**: Information not established from public sources is never fabricated; it is explicitly marked *"Not established from public sources"* and tracked under *"Information to prepare"*. Exact quotes are retained for sectors, customer models, and funding rounds.
 - **Extensible Block Renderer Registry**: Open/Closed frontend component registry rendering paragraphs, key-value tables, founder profile cards, matrices, and structured comparisons.
 - **Resilient Multi-Provider Fallback**: Search fallback chain (SearXNG $\rightarrow$ DuckDuckGo $\rightarrow$ Manual URL override) with circuit breakers and rate limiting.
 - **Privacy-Preserving & Resource-Bounded**: No cloud LLM subscriptions required. Runs local LLM inference (e.g. Ollama via Tailscale), unauthenticated public scrapers, SSRF protection, and memory bounds suitable for budget cloud instances (AWS Lightsail).
@@ -140,7 +142,7 @@ Visit **`http://localhost:5173`** to access the dashboard, or click **"Discover 
 ## Running Automated Tests
 
 ### Backend Test Suite (Pytest)
-Executes **168 automated tests** covering domain state machines, use case logic, golden evidence-to-canonical report mapping, port contract tests for all real and fake adapters, SSRF/rate limiter security checks, architecture layer isolation, and end-to-end API integration tests:
+Executes **214 automated tests** covering domain state machines, use case logic, multi-source evidence extraction (RDAP, News, Wikidata, Wayback), PDF manual evidence ingest, golden evidence-to-canonical report mapping, port contract tests for all real and fake adapters, SSRF/rate limiter security checks, architecture layer isolation, and end-to-end API integration tests:
 
 ```powershell
 cd backend
@@ -155,8 +157,16 @@ cd backend
 .\.venv\Scripts\pytest tests/unit/test_architecture.py -v
 ```
 
+### Golden Reference Benchmark
+Evaluates Company Discovery against canonical ground truth references (e.g. Mysa reference screen):
+
+```powershell
+cd backend
+python -m app.scripts.benchmark_mysa
+```
+
 ### Frontend Test Suite (Vitest)
-Executes **38 tests** verifying all block renderers (`para`, `kv`, `olist`, `list`, `table`, `cards`, `comparison` shapes), UI primitives, date formatters, and discovery components (`DiscoveryForm`, `CandidateReview`, `JobProgress`):
+Executes **39 tests** verifying all block renderers (`para`, `kv`, `olist`, `list`, `table`, `cards`, `comparison` shapes), UI primitives, date formatters, and discovery components (`DiscoveryForm`, `CandidateReview` with manual evidence provision, `JobProgress`):
 
 ```powershell
 cd frontend

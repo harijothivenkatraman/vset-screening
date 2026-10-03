@@ -45,3 +45,20 @@ class TestSsrfGuard:
         assert is_safe_url(good_url, resolve_dns=False)
         validated = validate_safe_url(good_url, resolve_dns=False)
         assert validated == good_url
+
+    @pytest.mark.parametrize(
+        "forbidden_url",
+        [
+            "https://crunchbase.com/organization/mysa",
+            "https://www.crunchbase.com/organization/mysa",
+            "https://pitchbook.com/profiles/company/123",
+            "https://zoominfo.com/c/acme/456",
+            "https://www.g2.com/products/mysa",
+            "https://tracxn.com/d/companies/mysa",
+            "https://www.trustpilot.com/review/getmysa.com",
+        ],
+    )
+    def test_blocks_forbidden_fetch_domains(self, forbidden_url: str) -> None:
+        assert not is_safe_url(forbidden_url, resolve_dns=False)
+        with pytest.raises(ValueError, match="Blocked forbidden fetch domain"):
+            validate_safe_url(forbidden_url, resolve_dns=False)

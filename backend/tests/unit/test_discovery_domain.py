@@ -14,6 +14,7 @@ from app.domain.entities.discovery import (
     PageContent,
     Evidence,
     EvidenceSource,
+    SourceDiagnostic,
     generate_content_fingerprint,
     generate_source_id,
     generate_screen_id,
@@ -88,6 +89,28 @@ class TestDiscoveryJob:
         job.add_warning("LinkedIn auth-walled")
         assert len(job.warnings) == 1
         assert job.warnings[0] == "LinkedIn auth-walled"
+
+    def test_add_diagnostic(self) -> None:
+        job = _make_job()
+        assert len(job.diagnostics) == 0
+        diag = SourceDiagnostic(
+            url="https://linkedin.com/company/acme",
+            outcome="auth_wall",
+            bytes_fetched=1024,
+            fields_extracted=[],
+        )
+        job.add_diagnostic(diag)
+        assert len(job.diagnostics) == 1
+        assert job.diagnostics[0].outcome == "auth_wall"
+
+    def test_add_diagnostic_capped_at_max(self) -> None:
+        job = _make_job()
+        for i in range(10):
+            job.add_diagnostic(
+                SourceDiagnostic(url=f"http://example.com/{i}", outcome="ok"),
+                max_items=5,
+            )
+        assert len(job.diagnostics) == 5
 
 
 class TestHelpers:

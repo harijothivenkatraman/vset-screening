@@ -110,3 +110,16 @@ To host Ollama on an office GPU workstation and allow Lightsail to connect over 
 - **SSRF Protection**: Outbound page fetching validates resolved IP addresses to block AWS metadata endpoints (`169.254.169.254`), loopback (`127.0.0.1`), and internal RFC-1918 subnets (`10.0.0.0/8`, `192.168.0.0/16`, `172.16.0.0/12`).
 - **Image Proxy**: External profile photos from LinkedIn are streamed through `/api/v1/image-proxy` with strict host allowlisting and image type checks.
 - **Resource Bounds**: Single uvicorn worker, max 20 jobs stored in memory, 2MB max page stream size, ensuring Lightsail RAM (~412MB) is never exceeded.
+
+---
+
+## 6. LinkedIn Datacenter vs. Residential IP Behavior
+
+- **Residential IPs**: Public LinkedIn pages (`/company/<slug>`, `/in/<slug>`) return rich HTML containing Schema.org JSON-LD (`Organization`, `Person`) and OpenGraph metadata without authentication.
+- **Datacenter IPs (AWS Lightsail, EC2, GCP)**: Datacenter IP ranges are recognized and blocked by Cloudflare bot protection (HTTP 403, `challenges.cloudflare.com`, Turnstile / "Just a moment...").
+- **Best-Effort & Circuit Breaker**:
+  - The pipeline never attempts to bypass or solve Cloudflare challenges.
+  - When Cloudflare bot protection is detected, the diagnostic outcome is recorded as `blocked_by_bot_protection` with no retries beyond one.
+  - After 3 consecutive blocks, an automated circuit breaker pauses LinkedIn requests for 30 minutes (`circuit_breaker_open`).
+  - Screening reports plainly state in Tab 9 limitations: `"LinkedIn could not be retrieved from this server."`
+- **Fallback**: The multi-source pipeline gathers company and founder details from official website deep crawls (sitemap, /team, /about), ICANN RDAP registration records, news/GDELT, and user-supplied manual evidence.

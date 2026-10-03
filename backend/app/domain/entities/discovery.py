@@ -96,6 +96,9 @@ class PageContent:
     retrieved_at: str = ""
     content_type: str = "text/html"
     status_code: int = 200
+    json_ld: list[dict[str, Any]] = field(default_factory=list)
+    links: list[str] = field(default_factory=list)
+    social_links: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -106,8 +109,18 @@ class EvidenceSource:
     publisher: str
     title: str | None = None
     published_date: str | None = None
-    source_type: str = "WEB"   # WEB, SOCIAL_MEDIA, NEWS, COMPANY_WEBSITE
+    source_type: str = "WEB"   # WEB, SOCIAL_MEDIA, NEWS, COMPANY_WEBSITE, SEARCH_SNIPPET
     retrieved_at: str = ""
+
+
+@dataclass(frozen=True)
+class SourceDiagnostic:
+    """Per-source diagnostic tracking outcome, size, and extracted attributes."""
+    url: str
+    outcome: str  # ok | auth_wall | http_error:<code> | robots_blocked | ssrf_blocked | timeout | empty_text | parse_empty
+    bytes_fetched: int = 0
+    fields_extracted: list[str] = field(default_factory=list)
+    error_details: str | None = None
 
 
 @dataclass
@@ -118,6 +131,11 @@ class Evidence:
     website_pages: list[PageContent] = field(default_factory=list)
     news_articles: list[PageContent] = field(default_factory=list)
     sources: list[EvidenceSource] = field(default_factory=list)
+    diagnostics: list[SourceDiagnostic] = field(default_factory=list)
+    search_snippets: dict[str, str] = field(default_factory=dict)
+    warnings: list[str] = field(default_factory=list)
+    manual_evidence: dict[str, Any] = field(default_factory=dict)
+    multi_source_fields: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -134,7 +152,10 @@ class DiscoveryJob:
     created_at: datetime
     updated_at: datetime
     confirmed_urls: dict[str, str]   # category → URL
+    search_snippets: dict[str, str] = field(default_factory=dict)
     error_message: str | None = None
+    diagnostics: list[SourceDiagnostic] = field(default_factory=list)
+    manual_evidence: dict[str, Any] = field(default_factory=dict)
 
     def transition_to(self, new_state: JobState) -> None:
         """Enforce state machine transitions."""
@@ -156,6 +177,11 @@ class DiscoveryJob:
 
     def add_warning(self, warning: str) -> None:
         self.warnings.append(warning)
+        self.updated_at = datetime.now()
+
+    def add_diagnostic(self, diagnostic: SourceDiagnostic, max_items: int = 50) -> None:
+        if len(self.diagnostics) < max_items:
+            self.diagnostics.append(diagnostic)
         self.updated_at = datetime.now()
 
 

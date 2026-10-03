@@ -12,6 +12,32 @@ from typing import Final
 
 ALLOWED_SCHEMES: Final[set[str]] = {"http", "https"}
 
+FORBIDDEN_FETCH_DOMAINS: Final[set[str]] = {
+    "crunchbase.com",
+    "pitchbook.com",
+    "zoominfo.com",
+    "g2.com",
+    "tracxn.com",
+    "trustpilot.com",
+}
+
+
+def is_forbidden_fetch_domain(target: str) -> bool:
+    """Check if a domain or URL belongs to the fetch denylist."""
+    if "://" in target or "/" in target:
+        try:
+            parsed = urllib.parse.urlsplit(target if "://" in target else f"http://{target}")
+            host = parsed.netloc or parsed.path.split("/")[0]
+        except Exception:
+            host = target
+    else:
+        host = target
+    clean = host.split(":")[0].strip("[]").lower()
+    for domain in FORBIDDEN_FETCH_DOMAINS:
+        if clean == domain or clean.endswith("." + domain):
+            return True
+    return False
+
 
 def is_ip_private_or_reserved(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
     """Check if an IP address belongs to private, loopback, link-local, or reserved networks."""
@@ -70,6 +96,10 @@ def validate_safe_url(url: str, *, resolve_dns: bool = True) -> str:
 
     if hostname_clean.endswith(".local") or hostname_clean.endswith(".internal"):
         raise ValueError(f"Blocked private TLD in '{hostname_clean}'")
+
+    # 3. Block login-gated/ToS-restricted data broker domains from direct fetching
+    if is_forbidden_fetch_domain(hostname_clean):
+        raise ValueError(f"Blocked forbidden fetch domain '{hostname_clean}'")
 
     # 3. DNS resolution check if enabled
     if resolve_dns:
