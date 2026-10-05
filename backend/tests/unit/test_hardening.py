@@ -102,19 +102,3 @@ class TestConstantTimeKeyComparison:
         key = "a" * 32
         assert hmac.compare_digest(key, key) is True
         assert hmac.compare_digest(key, "b" * 32) is False
-
-
-class TestSeedIdempotency:
-    @pytest.mark.asyncio
-    async def test_seed_second_run_is_unchanged(self):
-        from seed import seed
-
-        # First run (seeds or verifies baseline)
-        results1 = await seed()
-        assert len(results1) >= 2
-
-        # Second run (must strictly be unchanged)
-        results2 = await seed()
-        assert len(results2) >= 2
-        for slug, status in results2:
-            assert status == "unchanged", f"Seed for {slug} was not idempotent: {status}"

@@ -155,3 +155,145 @@ async def test_fetch_endpoint_auth_guard(client: AsyncClient) -> None:
     # Fetch without admin key -> 401
     resp_unauth = await client.post("/api/v1/founders/fetch", json=fetch_payload)
     assert resp_unauth.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_post_pending_explicit_flow(client: AsyncClient) -> None:
+    pending_payload = {
+        "founder_name": "Jane Fictional",
+        "company_name": "Fictional Pending Corp",
+        "linkedin_url": "https://www.linkedin.com/in/jane-fictional",
+        "notes": "Created as pending after blocked fetch",
+        "verification_reason": "Bot protection blocked fetch",
+    }
+    resp = await client.post(
+        "/api/v1/founders/pending",
+        json=pending_payload,
+        headers=ADMIN_HEADERS,
+    )
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["founder_name"] == "Jane Fictional"
+    assert data["company_name"] == "Fictional Pending Corp"
+    assert data["slug"] == "jane-fictional-fictional-pending-corp"
+    assert data["identity_status"] == "unverified"
+    assert data["retrieval"]["status"] == "pending_evidence"
+    assert data["retrieval"]["source_label"] == "Pending evidence"
+    assert data["notes"] == "Created as pending after blocked fetch"
+
+
+@pytest.mark.asyncio
+async def test_upload_pdf_over_2mb_returns_413(client: AsyncClient) -> None:
+    # 2 MB + 1024 bytes
+    oversized_data = b"0" * (2 * 1024 * 1024 + 1024)
+    files = {"file": ("oversized.pdf", oversized_data, "application/pdf")}
+    data = {"founder_name": "Asha Example", "company_name": "Example Corp"}
+
+    resp = await client.post(
+        "/api/v1/founders/upload-pdf",
+        data=data,
+        files=files,
+        headers=ADMIN_HEADERS,
+    )
+    assert resp.status_code == 413
+    assert "exceeds" in resp.json()["detail"].lower()
+    assert "2 mb" in resp.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_slug_duplicate_warning_vs_allow_duplicate(client: AsyncClient) -> None:
+    payload = {
+        "founder_name": "Duplicate Person",
+        "company_name": "Duplicate Inc",
+        "evidence_text": "Duplicate Person\nFounder at Duplicate Inc\nExperience:\nFounder, Duplicate Inc (2020 - Present)",
+    }
+
+    # 1. Create first profile
+    resp1 = await client.post("/api/v1/founders", json=payload, headers=ADMIN_HEADERS)
+    assert resp1.status_code == 201
+    first_slug = resp1.json()["slug"]
+    assert first_slug == "duplicate-person-duplicate-inc"
+
+    # 2. Attempt duplicate without allow_duplicate -> 409 Conflict with details
+    resp_conflict = await client.post("/api/v1/founders", json=payload, headers=ADMIN_HEADERS)
+    assert resp_conflict.status_code == 409
+    conflict_data = resp_conflict.json()
+    assert conflict_data["existing_slug"] == first_slug
+    assert "already exists" in conflict_data["detail"].lower()
+
+    # 3. Create with allow_duplicate=True -> 201 Created with disambiguated slug
+    payload_dup = dict(payload)
+    payload_dup["allow_duplicate"] = True
+    resp2 = await client.post("/api/v1/founders", json=payload_dup, headers=ADMIN_HEADERS)
+    assert resp2.status_code == 201
+    second_slug = resp2.json()["slug"]
+    assert second_slug != first_slug
+    assert second_slug.startswith("duplicate-person-duplicate-inc-")
+
+
+@pytest.mark.asyncio
+async def test_pii_stripping_on_api_create(client: AsyncClient) -> None:
+    payload = {
+        "founder_name": "Privacy Conscious",
+        "company_name": "Privacy Corp",
+        "evidence_text": (
+            "Privacy Conscious\n"
+            "Chief Technology Officer at Privacy Corp\n"
+            "Contact: privacy@privacycorp.example.com | +1 800 555 0199 | https://linkedin.com/in/privacy-user\n\n"
+            "Experience:\n"
+            "CTO, Privacy Corp (2021 - Present)\n"
+            "About:\n"
+            "Leading engineering teams. Email me at secret@corp.com"
+        ),
+    }
+    resp = await client.post("/api/v1/founders", json=payload, headers=ADMIN_HEADERS)
+    assert resp.status_code == 201
+    slug = resp.json()["slug"]
+
+    # Verify via GET endpoint
+    resp_get = await client.get(f"/api/v1/founders/{slug}")
+    assert resp_get.status_code == 200
+    profile_data = resp_get.json()
+    serialized = str(profile_data)
+
+    assert "privacy@privacycorp.example.com" not in serialized
+    assert "secret@corp.com" not in serialized
+    assert "800 555 0199" not in serialized
+
+
+@pytest.mark.asyncio
+async def test_rate_limiter_blocks_excessive_requests(client: AsyncClient) -> None:
+    from app.presentation.guards.rate_limiter_guard import founder_action_limiter
+
+    founder_action_limiter.reset()
+
+    # Make 10 validly authenticated fetch requests (under limit)
+    # They may fail internally with invalid URL/fetch error, but the rate limiter passes them through.
+    fetch_payload = {
+        "founder_name": "Asha Example",
+        "linkedin_url": "https://www.linkedin.com/in/asha-example",
+        "save_as_pending": False,
+    }
+
+    # First 10 requests pass the rate limiter (outcome doesn't matter, status is not 429)
+    for _ in range(10):
+        resp = await client.post(
+            "/api/v1/founders/fetch",
+            json=fetch_payload,
+            headers=ADMIN_HEADERS,
+        )
+        assert resp.status_code != 429
+
+    # 11th request exceeds the per-IP limit of 10 req/min -> 429
+    resp_429 = await client.post(
+        "/api/v1/founders/fetch",
+        json=fetch_payload,
+        headers=ADMIN_HEADERS,
+    )
+    assert resp_429.status_code == 429
+    assert "rate limit exceeded" in resp_429.json()["detail"].lower()
+    assert "retry-after" in resp_429.headers
+
+    # Reset limiter so downstream tests are not impacted
+    founder_action_limiter.reset()
+

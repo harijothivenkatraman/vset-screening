@@ -26,6 +26,7 @@ def _model_to_entity(model: FounderProfileModel) -> FounderProfile:
         headline=model.headline,
         location=model.location,
         about=model.about,
+        screening_assessment=model.screening_assessment,
         linkedin_url=model.linkedin_url,
         experience_timeline=[
             ExperienceTimelineItem.from_dict(item)
@@ -64,6 +65,7 @@ class SqliteFounderProfileRepository(FounderProfileRepository):
                 headline=profile.headline,
                 location=profile.location,
                 about=profile.about,
+                screening_assessment=profile.screening_assessment,
                 linkedin_url=profile.linkedin_url,
                 experience_timeline=[exp.to_dict() for exp in profile.experience_timeline],
                 education=[edu.to_dict() for edu in profile.education],
@@ -85,6 +87,7 @@ class SqliteFounderProfileRepository(FounderProfileRepository):
             model.headline = profile.headline
             model.location = profile.location
             model.about = profile.about
+            model.screening_assessment = profile.screening_assessment
             model.linkedin_url = profile.linkedin_url
             model.experience_timeline = [exp.to_dict() for exp in profile.experience_timeline]
             model.education = [edu.to_dict() for edu in profile.education]

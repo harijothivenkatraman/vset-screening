@@ -49,6 +49,7 @@ class UpdateProfileUseCase:
         notes: str | None = None,
         text: str | None = None,
         pdf_bytes: bytes | None = None,
+        screening_assessment: str | None = None,
         confirm_identity: bool = False,
         is_user_override: bool = True,
     ) -> FounderProfile:
@@ -172,9 +173,12 @@ class UpdateProfileUseCase:
             )
             profile.identity_status = "user_asserted"
 
-        # 3. Handle notes update
+        # 3. Handle notes and screening assessment update
         if notes is not None:
             profile.notes = notes.strip() if notes.strip() else None
+
+        if screening_assessment is not None:
+            profile.screening_assessment = screening_assessment.strip() if screening_assessment.strip() else None
 
         profile.updated_at = datetime.now(timezone.utc)
         return await self._repository.save(profile)

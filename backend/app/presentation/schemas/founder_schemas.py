@@ -43,6 +43,7 @@ class FounderProfileResponse(BaseModel):
     headline: str | None = None
     location: str | None = None
     about: str | None = None
+    screening_assessment: str | None = None
     linkedin_url: str | None = None
     experience_timeline: list[ExperienceItemSchema] = Field(default_factory=list)
     education: list[EducationItemSchema] = Field(default_factory=list)
@@ -78,6 +79,7 @@ class AddFounderProfileRequest(BaseModel):
 class UpdateFounderProfileRequest(BaseModel):
     evidence_text: str | None = None
     linkedin_url: str | None = None
+    screening_assessment: str | None = None
     notes: str | None = None
 
 
@@ -85,7 +87,15 @@ class TryPublicFetchRequest(BaseModel):
     founder_name: str
     linkedin_url: str
     company_name: str | None = None
-    save_as_pending: bool = False
+
+
+class SavePendingProfileRequest(BaseModel):
+    founder_name: str
+    company_name: str | None = None
+    linkedin_url: str | None = None
+    notes: str | None = None
+    verification_reason: str | None = None
+    allow_duplicate: bool = False
 
 
 class TryPublicFetchResponse(BaseModel):
@@ -100,3 +110,4 @@ class DuplicateConflictResponse(BaseModel):
     detail: str
     existing_id: str
     existing_slug: str
+

@@ -35,22 +35,10 @@ class Settings(BaseSettings):
     CORS_ORIGINS: list[str] = ["*"]
     ENVIRONMENT: str = "development"
 
-    # Discovery settings
-    DISCOVERY_ENABLED: bool = True
-    SEARCH_PROVIDERS: list[str] = ["searxng", "duckduckgo"]
-    SEARXNG_BASE_URL: str | None = None
-    LLM_BASE_URL: str = "http://127.0.0.1:11434/v1"
-    # The specific model name used for discovery report assembly (e.g. qwen2.5:7b-instruct)
-    LLM_MODEL: str = "qwen2.5:7b-instruct"
-    LLM_TIMEOUT_SECONDS: float = 300.0
-    LLM_PROFILE: str = "light"
-    CACHE_TTL: int = 3600
+    # Scraper & Rate Limit Settings
     SCRAPER_MIN_INTERVAL: float = 3.0
-    IMAGE_PROXY_ALLOWED_HOSTS: list[str] = ["media.licdn.com", "static.licdn.com"]
-    DISCOVERY_MAX_JOBS_STORED: int = 20
-    DISCOVERY_MAX_EVIDENCE_SIZE_MB: int = 5
-    DISCOVERY_RATE_LIMIT_PER_HOUR: int = 5
-    DISCOVERY_MIN_FREE_DISK_GB: float = 2.0
+    RATE_LIMIT_FETCH_PER_MINUTE_IP: int = 10
+    RATE_LIMIT_FETCH_PER_MINUTE_GLOBAL: int = 30
 
     @field_validator("DATABASE_URL", mode="before")
     @classmethod
@@ -59,7 +47,7 @@ class Settings(BaseSettings):
             return normalize_database_url(v)
         return str(v)
 
-    @field_validator("CORS_ORIGINS", "SEARCH_PROVIDERS", "IMAGE_PROXY_ALLOWED_HOSTS", mode="before")
+    @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
     def assemble_string_list(cls, v: Any) -> list[str]:
         if isinstance(v, str):

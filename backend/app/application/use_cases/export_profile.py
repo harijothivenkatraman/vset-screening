@@ -41,6 +41,7 @@ class ExportProfileUseCase:
             "headline": profile.headline,
             "location": profile.location,
             "about": profile.about,
+            "screening_assessment": profile.screening_assessment,
             "linkedin_url": profile.linkedin_url,
             "experience_timeline": [exp.to_dict() for exp in profile.experience_timeline],
             "education": [edu.to_dict() for edu in profile.education],

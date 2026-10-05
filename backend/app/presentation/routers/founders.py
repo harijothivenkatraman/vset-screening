@@ -39,14 +39,18 @@ from app.presentation.dependencies import (
     get_get_profile_use_case,
     get_list_profiles_use_case,
     get_restore_profile_version_use_case,
+    get_save_pending_profile_use_case,
     get_try_public_fetch_use_case,
     get_update_profile_use_case,
 )
+from app.application.use_cases.save_pending_profile import SavePendingProfileUseCase
 from app.presentation.guards.api_key_guard import verify_admin_key, verify_read_or_admin_key
+from app.presentation.guards.rate_limiter_guard import rate_limit_founder_action
 from app.presentation.schemas.founder_schemas import (
     AddFounderProfileRequest,
     FounderProfileListResponse,
     FounderProfileResponse,
+    SavePendingProfileRequest,
     TryPublicFetchRequest,
     TryPublicFetchResponse,
     UpdateFounderProfileRequest,
@@ -152,7 +156,7 @@ async def add_founder_profile(
     "/upload-pdf",
     response_model=FounderProfileResponse,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(verify_admin_key)],
+    dependencies=[Depends(verify_admin_key), Depends(rate_limit_founder_action)],
     summary="Add founder profile from uploaded PDF file",
 )
 async def add_founder_profile_pdf(
@@ -164,12 +168,23 @@ async def add_founder_profile_pdf(
     use_case: AddFromEvidenceUseCase = Depends(get_add_from_evidence_use_case),
 ) -> Any:
     try:
-        pdf_bytes = await file.read()
-        if len(pdf_bytes) > MAX_PDF_BYTES:
-            raise HTTPException(
-                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                detail=f"Uploaded PDF exceeds the {MAX_PDF_BYTES // (1024 * 1024)} MB limit.",
-            )
+        # Enforce 2 MB cap while streaming in chunks to reject early without buffering large files
+        chunk_size = 64 * 1024
+        chunks: list[bytes] = []
+        total_bytes = 0
+        while True:
+            chunk = await file.read(chunk_size)
+            if not chunk:
+                break
+            total_bytes += len(chunk)
+            if total_bytes > MAX_PDF_BYTES:
+                raise HTTPException(
+                    status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+                    detail=f"Uploaded PDF exceeds the {MAX_PDF_BYTES // (1024 * 1024)} MB limit.",
+                )
+            chunks.append(chunk)
+        pdf_bytes = b"".join(chunks)
+
         profile = await use_case.execute(
             founder_name=founder_name,
             company_name=company_name,
@@ -200,8 +215,8 @@ async def add_founder_profile_pdf(
 @router.post(
     "/fetch",
     response_model=TryPublicFetchResponse,
-    dependencies=[Depends(verify_admin_key)],
-    summary="Try public fetch with bot detection and verification",
+    dependencies=[Depends(verify_admin_key), Depends(rate_limit_founder_action)],
+    summary="Try public fetch with bot detection and verification (never persists on failure)",
 )
 async def try_public_fetch(
     payload: TryPublicFetchRequest,
@@ -212,10 +227,10 @@ async def try_public_fetch(
             founder_name=payload.founder_name,
             linkedin_url=payload.linkedin_url,
             company_name=payload.company_name,
-            save_as_pending=payload.save_as_pending,
+            save_as_pending=False,
         )
         return TryPublicFetchResponse(
-            success=result.is_verified or result.persisted,
+            success=result.is_verified,
             message=result.message,
             status=result.diagnostic.outcome,
             profile=_to_response_schema(result.candidate) if result.candidate else None,
@@ -226,6 +241,45 @@ async def try_public_fetch(
             status_code=status.HTTP_409_CONFLICT,
             detail=str(exc),
         ) from exc
+    except InvalidEvidenceException as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+
+
+@router.post(
+    "/pending",
+    response_model=FounderProfileResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(verify_admin_key)],
+    summary="Explicitly save a founder profile as pending evidence",
+)
+async def save_pending_founder_profile(
+    payload: SavePendingProfileRequest,
+    use_case: SavePendingProfileUseCase = Depends(get_save_pending_profile_use_case),
+) -> Any:
+    try:
+        profile = await use_case.execute(
+            founder_name=payload.founder_name,
+            company_name=payload.company_name,
+            linkedin_url=payload.linkedin_url,
+            notes=payload.notes,
+            verification_reason=payload.verification_reason,
+            allow_duplicate=payload.allow_duplicate,
+        )
+        return _to_response_schema(profile)
+    except DuplicateProfileException as exc:
+        return JSONResponse(
+            status_code=status.HTTP_409_CONFLICT,
+            content={
+                "detail": str(exc),
+                "existing_id": exc.existing_id,
+                "existing_slug": exc.existing_slug,
+                "founder_name": exc.founder_name,
+                "company_name": exc.company_name,
+            },
+        )
     except InvalidEvidenceException as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -249,6 +303,7 @@ async def update_founder_profile(
             identifier=id_or_slug,
             notes=payload.notes,
             text=payload.evidence_text,
+            screening_assessment=payload.screening_assessment,
             is_user_override=True,
         )
         return _to_response_schema(profile)

@@ -11,11 +11,18 @@ from typing import Any, Literal
 from uuid import UUID, uuid4
 
 # Identity status enum:
+# - "reference_screen": Sourced from a verified vSET reference screen report
 # - "verified": Proven by domain links, website proximity, or reference report
 # - "user_asserted": Sourced from user-provided text or uploaded PDF
 # - "likely_match": Name and company mentioned, but lacks domain proof (requires confirmation)
 # - "unverified": Candidate not corroborated or rejected
-IdentityStatusType = Literal["verified", "user_asserted", "likely_match", "unverified"]
+IdentityStatusType = Literal[
+    "reference_screen",
+    "verified",
+    "user_asserted",
+    "likely_match",
+    "unverified",
+]
 
 # Retrieval status enum:
 RetrievalStatusType = Literal[
@@ -157,6 +164,7 @@ class FounderProfile:
     languages: list[str] = field(default_factory=list)
     retrieval: RetrievalPayload = field(default_factory=RetrievalPayload)
     identity_status: IdentityStatusType = "user_asserted"
+    screening_assessment: str | None = None
     notes: str | None = None
     previous_version: dict[str, Any] | None = None
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
@@ -168,6 +176,7 @@ class FounderProfile:
             "headline": self.headline,
             "location": self.location,
             "about": self.about,
+            "screening_assessment": self.screening_assessment,
             "linkedin_url": self.linkedin_url,
             "experience_timeline": [exp.to_dict() for exp in self.experience_timeline],
             "education": [edu.to_dict() for edu in self.education],
@@ -185,6 +194,7 @@ class FounderProfile:
         self.headline = snapshot.get("headline")
         self.location = snapshot.get("location")
         self.about = snapshot.get("about")
+        self.screening_assessment = snapshot.get("screening_assessment")
         self.linkedin_url = snapshot.get("linkedin_url")
         self.experience_timeline = [
             ExperienceTimelineItem.from_dict(item)
@@ -214,6 +224,7 @@ class FounderProfile:
             "headline": self.headline,
             "location": self.location,
             "about": self.about,
+            "screening_assessment": self.screening_assessment,
             "linkedin_url": self.linkedin_url,
             "experience_timeline": [exp.to_dict() for exp in self.experience_timeline],
             "education": [edu.to_dict() for edu in self.education],

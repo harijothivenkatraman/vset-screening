@@ -12,7 +12,6 @@ from app.infrastructure.discovery.scrapers.normalizer import (
     deduplicate_list,
     extract_year,
 )
-from app.infrastructure.discovery.scrapers.website_fetcher import WebsiteFetcherAdapter
 
 
 PERSON_HTML = """
@@ -170,62 +169,3 @@ class TestLinkedInPublicScraper:
             _, diag4 = await scraper.fetch_company_with_diagnostic("https://linkedin.com/company/blocked")
             assert diag4.outcome == "circuit_breaker_open"
             assert "circuit breaker open" in (diag4.error_details or "")
-
-
-class TestWebsiteFetcher:
-    async def test_fetch_extracts_clean_text(self) -> None:
-        html = """
-        <html>
-        <head>
-          <title>Acme Inc | Home</title>
-          <meta name="description" content="Leading robotics startup.">
-        </head>
-        <body>
-          <nav><a href="/">Nav Item</a></nav>
-          <h1>Welcome to Acme</h1>
-          <p>We build autonomous robots for precision logistics.</p>
-          <script>console.log("analytics");</script>
-          <footer>Copyright 2026</footer>
-        </body>
-        </html>
-        """
-        fetcher = WebsiteFetcherAdapter(
-            rate_limiter=HostRateLimiter(min_interval_seconds=0),
-            check_robots=False,
-            validate_ssrf_dns=False,
-        )
-
-        class MockStreamResponse:
-            status_code = 200
-            headers = {"content-type": "text/html; charset=utf-8"}
-            encoding = "utf-8"
-
-            async def __aenter__(self):
-                return self
-
-            async def __aexit__(self, *args):
-                pass
-
-            async def aiter_bytes(self):
-                yield html.encode("utf-8")
-
-        mock_client = MagicMock()
-        mock_client.stream.return_value = MockStreamResponse()
-        mock_client.__aenter__.return_value = mock_client
-        mock_client.__aexit__.return_value = None
-
-        with patch("httpx.AsyncClient", return_value=mock_client):
-            page = await fetcher.fetch("https://acme.io")
-            assert page is not None
-            assert page.title == "Acme Inc | Home"
-            assert page.description == "Leading robotics startup."
-            assert "Welcome to Acme" in page.text
-            assert "We build autonomous robots" in page.text
-            assert "analytics" not in page.text
-            assert "Nav Item" not in page.text
-            assert "Copyright" not in page.text
-
-    async def test_ssrf_blocked_returns_none(self) -> None:
-        fetcher = WebsiteFetcherAdapter()
-        page = await fetcher.fetch("http://127.0.0.1/admin")
-        assert page is None

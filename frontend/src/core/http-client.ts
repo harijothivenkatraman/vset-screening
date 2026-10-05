@@ -27,8 +27,13 @@ export async function apiClient<T>(
   }
 
   // Only send API key for non-GET requests (admin actions)
-  if (options?.apiKey && options?.method && options.method.toUpperCase() !== "GET") {
-    headers.set("X-API-Key", options.apiKey);
+  const adminKey =
+    options?.apiKey ||
+    (typeof window !== "undefined"
+      ? sessionStorage.getItem("founder_profiles_admin_key")
+      : null);
+  if (adminKey && options?.method && options.method.toUpperCase() !== "GET") {
+    headers.set("X-API-Key", adminKey);
   }
 
   const response = await fetch(url, {

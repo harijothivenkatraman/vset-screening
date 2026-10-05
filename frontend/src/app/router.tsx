@@ -1,63 +1,36 @@
 import React from "react";
 import { Navigate, createBrowserRouter, useParams } from "react-router-dom";
-import { AppShell } from "@/app/layout/AppShell";
-import { ActionsPage } from "@/features/report/ui/actions/ActionsPage";
-import { SectionPage } from "@/features/report/ui/sections/SectionPage";
-import { SourcesPage } from "@/features/report/ui/sources/SourcesPage";
-import { useCompanies } from "@/features/companies/hooks";
-import { DiscoverPage } from "@/features/discovery";
+import { FounderProfilesPage, FounderProfileDetailPage } from "@/features/founders";
 
-const IndexRedirect: React.FC = () => {
-  const { data: companies, isLoading } = useCompanies();
-  if (isLoading) return null;
-  const firstSlug = companies && companies.length > 0 ? companies[0].slug : "terraspark";
-  return <Navigate to={`/companies/${firstSlug}/company`} replace />;
-};
-
-const CompanyRedirect: React.FC = () => {
+const LegacyCompanyRedirect: React.FC = () => {
   const { slug } = useParams<{ slug: string }>();
-  return <Navigate to={`/companies/${slug || "terraspark"}/company`} replace />;
-};
-
-const FounderProfilesRedirect: React.FC = () => {
-  const { slug } = useParams<{ slug: string }>();
-  return <Navigate to={`/companies/${slug || "terraspark"}/team`} replace />;
+  if (slug) {
+    // If accessing legacy company route, try to redirect to profile with matching slug prefix
+    return <Navigate to={`/profiles/${slug}`} replace />;
+  }
+  return <Navigate to="/" replace />;
 };
 
 export const router = createBrowserRouter([
   {
     path: "/",
-    element: <IndexRedirect />,
+    element: <FounderProfilesPage />,
   },
   {
-    path: "/discover",
-    element: <DiscoverPage />,
+    path: "/profiles/:slug",
+    element: <FounderProfileDetailPage />,
   },
   {
-    path: "/companies/:slug",
-    element: <AppShell />,
-    children: [
-      {
-        index: true,
-        element: <CompanyRedirect />,
-      },
-      {
-        path: "actions",
-        element: <ActionsPage />,
-      },
-      {
-        path: "sources",
-        element: <SourcesPage />,
-      },
-      {
-        path: "founder_profiles",
-        element: <FounderProfilesRedirect />,
-      },
-      {
-        path: ":sectionKey",
-        element: <SectionPage />,
-      },
-    ],
+    path: "/companies/:slug/founder_profiles",
+    element: <LegacyCompanyRedirect />,
+  },
+  {
+    path: "/companies/:slug/team",
+    element: <LegacyCompanyRedirect />,
+  },
+  {
+    path: "/companies/:slug/*",
+    element: <LegacyCompanyRedirect />,
   },
   {
     path: "*",

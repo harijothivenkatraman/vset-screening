@@ -1,3 +1,4 @@
+"""Main FastAPI application for Founder Profiles standalone app."""
 from contextlib import asynccontextmanager
 import logging
 import sys
@@ -10,16 +11,7 @@ from sqlalchemy import text
 
 from app.config import get_settings
 from app.infrastructure.persistence.database import engine, init_db
-from app.presentation.routers import (
-    actions_router,
-    companies_router,
-    discovery_router,
-    founders_router,
-    image_proxy_router,
-    import_router,
-    sections_router,
-    sources_router,
-)
+from app.presentation.routers import founders_router
 
 # Standard logging configuration to stdout (never logging credentials, secrets or payloads)
 logging.basicConfig(
@@ -27,7 +19,7 @@ logging.basicConfig(
     stream=sys.stdout,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
-logger = logging.getLogger("vset.api")
+logger = logging.getLogger("vset.founder_profiles")
 
 settings = get_settings()
 
@@ -40,8 +32,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 
 app = FastAPI(
-    title="vSET Startup Screening API",
-    description="Backend API for the vSET Startup Screening Dashboard presenting structured company assessment reports.",
+    title="Founder Profiles API",
+    description="Standalone Backend API for Founder Profiles management, public profile extraction, text/PDF evidence ingestion, and canonical export.",
     version="1.0.0",
     lifespan=lifespan,
     docs_url="/docs",
@@ -85,14 +77,5 @@ async def health_check(response: Response) -> dict[str, str]:
         return {"status": "unhealthy", "environment": settings.ENVIRONMENT}
 
 
-# API v1 router aggregation
-api_v1_prefix = "/api/v1"
-app.include_router(companies_router, prefix=api_v1_prefix)
-app.include_router(sections_router, prefix=api_v1_prefix)
-app.include_router(actions_router, prefix=api_v1_prefix)
-app.include_router(sources_router, prefix=api_v1_prefix)
-app.include_router(import_router, prefix=api_v1_prefix)
-app.include_router(discovery_router, prefix=api_v1_prefix)
-app.include_router(image_proxy_router, prefix=api_v1_prefix)
-app.include_router(founders_router, prefix=api_v1_prefix)
-
+# Mount standalone Founder Profiles router
+app.include_router(founders_router, prefix="/api/v1")
