@@ -248,3 +248,75 @@ def get_build_report_service(
         source_registry=source_registry,
     )
 
+
+# ── Founder Profiles Standalone Dependencies ──
+from app.application.ports.founder_profile_repository import FounderProfileRepository
+from app.infrastructure.persistence.sqlite_founder_repository import SqliteFounderProfileRepository
+from app.application.use_cases.add_from_evidence import AddFromEvidenceUseCase
+from app.application.use_cases.delete_profile import DeleteProfileUseCase
+from app.application.use_cases.export_profile import ExportProfileUseCase
+from app.application.use_cases.get_profile import GetProfileUseCase
+from app.application.use_cases.list_profiles import ListProfilesUseCase
+from app.application.use_cases.restore_profile_version import RestoreProfileVersionUseCase
+from app.application.use_cases.try_public_fetch import TryPublicFetchUseCase
+from app.application.use_cases.update_profile import UpdateProfileUseCase
+
+
+def get_founder_profile_repository(
+    session: AsyncSession = Depends(get_db_session),
+) -> FounderProfileRepository:
+    return SqliteFounderProfileRepository(session)
+
+
+def get_add_from_evidence_use_case(
+    repo: FounderProfileRepository = Depends(get_founder_profile_repository),
+) -> AddFromEvidenceUseCase:
+    return AddFromEvidenceUseCase(repo)
+
+
+def get_try_public_fetch_use_case(
+    repo: FounderProfileRepository = Depends(get_founder_profile_repository),
+    scraper: ProfileScraperPort = Depends(get_profile_scraper_port),
+) -> TryPublicFetchUseCase:
+    return TryPublicFetchUseCase(
+        repository=repo,
+        scraper=scraper,
+    )
+
+
+def get_list_profiles_use_case(
+    repo: FounderProfileRepository = Depends(get_founder_profile_repository),
+) -> ListProfilesUseCase:
+    return ListProfilesUseCase(repo)
+
+
+def get_get_profile_use_case(
+    repo: FounderProfileRepository = Depends(get_founder_profile_repository),
+) -> GetProfileUseCase:
+    return GetProfileUseCase(repo)
+
+
+def get_update_profile_use_case(
+    repo: FounderProfileRepository = Depends(get_founder_profile_repository),
+) -> UpdateProfileUseCase:
+    return UpdateProfileUseCase(repo)
+
+
+def get_restore_profile_version_use_case(
+    repo: FounderProfileRepository = Depends(get_founder_profile_repository),
+) -> RestoreProfileVersionUseCase:
+    return RestoreProfileVersionUseCase(repo)
+
+
+def get_delete_profile_use_case(
+    repo: FounderProfileRepository = Depends(get_founder_profile_repository),
+) -> DeleteProfileUseCase:
+    return DeleteProfileUseCase(repo)
+
+
+def get_export_profile_use_case(
+    repo: FounderProfileRepository = Depends(get_founder_profile_repository),
+) -> ExportProfileUseCase:
+    return ExportProfileUseCase(repo)
+
+

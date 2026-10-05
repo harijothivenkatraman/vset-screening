@@ -167,7 +167,10 @@ def _parse_date_range(date_str: str) -> tuple[str, str, str, bool]:
     parts = re.split(r"[-–—]", clean)
     start = parts[0].strip() if len(parts) > 0 else ""
     end = parts[1].strip() if len(parts) > 1 else ("Present" if is_current else "")
+    if not duration and start:
+        duration = f"{start} - {end}".strip(" -")
     return start, end, duration, is_current
+
 
 
 def _is_date_line(line: str) -> bool:
@@ -240,7 +243,7 @@ def parse_manual_profile_text(text: str) -> dict[str, Any]:
 
     current_section = "header"
     for line in lines:
-        lower = line.lower()
+        lower = line.lower().strip().rstrip(":")
         if lower in ("top skills", "skills", "key skills"):
             current_section = "skills"
             continue
@@ -306,9 +309,9 @@ def parse_manual_profile_text(text: str) -> dict[str, Any]:
         line2 = exp_lines[i + 1] if i + 1 < len(exp_lines) else ""
         line3 = exp_lines[i + 2] if i + 2 < len(exp_lines) else ""
 
-        # Case A: Self-contained inline experience line, e.g. "Title at Company (Dates)"
+        # Case A: Self-contained inline experience line, e.g. "Title at Company (Dates)" or "Title, Company (Dates)"
         date_match = re.search(r"\(((?:19|20)\d{2}\s*[-–—]\s*(?:present|(?:19|20)\d{2})[^)]*)\)", line1, re.I) or re.search(r"\b((?:19|20)\d{2}\s*[-–—]\s*(?:present|(?:19|20)\d{2}))\b", line1, re.I)
-        if date_match and (" at " in line1 or " @" in line1 or " - " in line1 or " · " in line1):
+        if date_match and (" at " in line1 or " @" in line1 or " - " in line1 or " · " in line1 or ", " in line1):
             date_str = date_match.group(1)
             start, end, duration, is_current = _parse_date_range(date_str)
             raw_text = line1[:date_match.start()] + line1[date_match.end():]
@@ -320,6 +323,12 @@ def parse_manual_profile_text(text: str) -> dict[str, Any]:
                 title, company = parts[0].strip(), parts[1].strip()
             elif " · " in raw_text:
                 parts = raw_text.split(" · ", 1)
+                title, company = parts[0].strip(), parts[1].strip()
+            elif " - " in raw_text:
+                parts = raw_text.split(" - ", 1)
+                title, company = parts[0].strip(), parts[1].strip()
+            elif ", " in raw_text:
+                parts = raw_text.split(", ", 1)
                 title, company = parts[0].strip(), parts[1].strip()
             result["experience"].append({
                 "company": company,
@@ -444,7 +453,7 @@ def parse_manual_profile_text(text: str) -> dict[str, Any]:
             start_year, end_year, _, _ = _parse_date_range(date_str)
             raw_edu = school[:edu_date_match.start()].strip(" ()·-–—")
             deg, sch, fld = "", raw_edu, ""
-            for sep in (" · ", " — ", " - ", " at "):
+            for sep in (" · ", " — ", " - ", " at ", ", "):
                 if sep in raw_edu:
                     parts = raw_edu.split(sep, 1)
                     deg = parts[0].strip()

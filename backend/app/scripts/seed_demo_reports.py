@@ -19,10 +19,14 @@ from app.config import get_settings
 from app.infrastructure.persistence.database import async_session_factory
 
 
+import os
+
+
 async def seed() -> None:
-    settings = get_settings()
-    if settings.ENVIRONMENT.lower() == "production":
+    env = os.environ.get("ENVIRONMENT", "").lower()
+    if env == "production" or get_settings().ENVIRONMENT.lower() == "production":
         raise RuntimeError("CRITICAL SAFETY GUARD: Demo seed scripts must never execute in production (ENVIRONMENT=production). Seeding aborted.")
+
 
     async with async_session_factory() as session:
         import_service = ReportImportService(session)

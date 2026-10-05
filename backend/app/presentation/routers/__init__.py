@@ -1,6 +1,7 @@
 from app.presentation.routers.actions import router as actions_router
 from app.presentation.routers.companies import router as companies_router
 from app.presentation.routers.discovery import router as discovery_router
+from app.presentation.routers.founders import router as founders_router
 from app.presentation.routers.image_proxy import router as image_proxy_router
 from app.presentation.routers.import_router import router as import_router
 from app.presentation.routers.sections import router as sections_router
@@ -14,4 +15,6 @@ __all__ = [
     "import_router",
     "discovery_router",
     "image_proxy_router",
+    "founders_router",
 ]
+

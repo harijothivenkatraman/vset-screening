@@ -39,6 +39,10 @@ from app.infrastructure.persistence.database import async_session_factory
 from app.infrastructure.persistence.company_repo import SqlAlchemyCompanyRepository
 from app.infrastructure.persistence.report_repo import SqlAlchemyReportRepository, sanitize_audit_snapshot
 
+__all__ = ["main", "export_company"]
+
+
+
 
 async def export_company(slug: str, output_path: str) -> None:
     async with async_session_factory() as session:

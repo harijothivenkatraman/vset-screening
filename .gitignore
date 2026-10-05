@@ -8,7 +8,10 @@
 # Database backups & local SQLite files
 backups/
 *.db
+*.db-shm
+*.db-wal
 *.sqlite3
+
 
 # Python caches and virtual environments
 __pycache__/

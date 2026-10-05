@@ -77,3 +77,44 @@ class InsufficientDiskSpaceError(DiscoveryError):
         super().__init__(f"Insufficient disk space: {available_gb:.1f} GB available, {required_gb:.1f} GB required")
         self.available_gb = available_gb
         self.required_gb = required_gb
+
+
+class ProfileNotFoundException(Exception):
+    """Founder profile not found by ID or slug."""
+    def __init__(self, identifier: str) -> None:
+        super().__init__(f"Founder profile '{identifier}' not found.")
+        self.identifier = identifier
+
+
+class DuplicateProfileException(Exception):
+    """A profile with this name and company already exists (allows open existing / create anyway)."""
+    def __init__(
+        self,
+        founder_name: str,
+        company_name: str | None,
+        existing_id: str,
+        existing_slug: str,
+    ) -> None:
+        msg = f"A profile for '{founder_name}'"
+        if company_name:
+            msg += f" at '{company_name}'"
+        msg += f" already exists (slug: {existing_slug})."
+        super().__init__(msg)
+        self.founder_name = founder_name
+        self.company_name = company_name
+        self.existing_id = existing_id
+        self.existing_slug = existing_slug
+
+
+class NoPreviousVersionException(Exception):
+    """No previous version is available to restore."""
+    def __init__(self, identifier: str) -> None:
+        super().__init__(f"No previous version available for profile '{identifier}'.")
+        self.identifier = identifier
+
+
+class InvalidEvidenceException(Exception):
+    """Submitted evidence is empty, malformed, or exceeds size limits."""
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+
