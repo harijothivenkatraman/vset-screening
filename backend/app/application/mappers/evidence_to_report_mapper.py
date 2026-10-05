@@ -15,10 +15,14 @@ import re
 from datetime import datetime, timezone
 from typing import Any
 
+from app.application.services.founder_cross_check import FounderCrossCheckService
+from app.application.services.pdf_extractor import discard_contact_info
 from app.domain.entities.discovery import (
     CompanyProfile,
+    CrossCheckConflict,
     Evidence,
     EvidenceSource,
+    FounderProfile,
     PersonProfile,
     generate_content_fingerprint,
     generate_screen_id,
@@ -205,7 +209,7 @@ def build_canonical_report(
     # ── Presentation ──────────────────────────────────────────────────
     slug = _slugify(company_name)
     presentation: dict[str, Any] = {
-        "audience_label": "Founder Screen",
+        "audience_label": "Auto-discovered · not reviewed",
         "action_section_title": "Investor questions & information to prepare",
         "action_intro": (
             "Part A lists the questions an investor would likely ask during a first "
@@ -295,42 +299,263 @@ def _build_company_section(
 def _build_team_section(
     evidence: Evidence, company_name: str, founder_names: list[str],
 ) -> dict[str, Any]:
-    """Section 2: Founder & team."""
-    founder_cards = _build_founder_cards(evidence, founder_names, company_name)
-
-    kv_pairs: list[list[str]] = [
+    """Section 2: Founder & team (unified single place for founder profile details)."""
+    blocks: list[list[Any]] = []
+    ribbon: list[list[str]] = [
         ["Founding team", str(len(founder_names))],
     ]
 
-    blocks: list[list[Any]] = [
-        ["kv", None, kv_pairs],
-    ]
+    profile_map: dict[str, PersonProfile] = {}
+    for p in getattr(evidence, "founder_profiles", []):
+        if p.name:
+            profile_map[p.name.lower()] = p
 
-    if founder_cards:
-        blocks.append(["cards", "Founder details", founder_cards])
-    else:
-        blocks.append(["para", "Founder details", NOT_ESTABLISHED])
+    # Check overall LinkedIn retrieval status from diagnostics
+    linkedin_blocked = False
+    for diag in getattr(evidence, "diagnostics", []):
+        d_url_lower = diag.url.lower()
+        if ("linkedin.com" in d_url_lower or diag.url.startswith("linkedin:")) and (
+            diag.outcome in ("blocked_by_bot_protection", "circuit_breaker_open")
+            or (diag.outcome.startswith("http_error") and "403" in diag.outcome)
+        ):
+            linkedin_blocked = True
+            break
 
-    # Real gaps only: check which founders had incomplete background
+    all_conflicts: list[CrossCheckConflict] = []
     gaps: list[str] = []
-    for card in founder_cards:
-        name = card.get("name", "")
-        lines = card.get("lines", [])
-        has_history = any(l[0] in ("Experience", "Current role") for l in lines)
-        if not has_history:
-            gaps.append(f"Full career history and background for {name} not established from public sources.")
+    retrieved_count = 0
+    founder_profile_blocks: list[list[Any]] = []
 
-    if len(founder_names) > 0 and not any(p.experience for p in evidence.founder_profiles):
-        gaps.append("Executive team composition beyond founders not established.")
+    for name in founder_names:
+        profile = _find_profile(name, profile_map)
+        team_info = _extract_founder_from_team_pages(name, getattr(evidence, "website_pages", []))
+        website_role = team_info["role"] if team_info else None
+
+        role = "Founder"
+        headline = ""
+        location = ""
+        clean_summary = ""
+        conflicts: list[CrossCheckConflict] = []
+        p_url = getattr(profile, "url", "") if profile else ""
+        retrieved_time = getattr(profile, "retrieved_at", "") if profile else ""
+
+        has_profile_data = bool(
+            profile
+            and (
+                profile.headline
+                or profile.summary
+                or profile.experience
+                or profile.education
+                or getattr(profile, "skills", None)
+                or getattr(profile, "certifications", None)
+                or (p_url and p_url.startswith("manual:"))
+            )
+        )
+
+        if profile and has_profile_data:
+            retrieved_count += 1
+            headline = profile.headline or ""
+            role = headline or (f"{website_role} (from website)" if website_role else "Founder")
+            location = profile.location or "Not established"
+
+            if profile.summary:
+                clean_summary = discard_contact_info(profile.summary)
+
+            # Cross-checks - ONLY for verified, attached profiles
+            identity_status = getattr(profile, "identity_status", "verified") or "verified"
+            if identity_status == "verified":
+                conflicts = FounderCrossCheckService.cross_check_founder_role(
+                    founder_name=name,
+                    website_role=website_role,
+                    experiences=profile.experience,
+                    company_name=company_name,
+                )
+                for conf in conflicts:
+                    all_conflicts.append(conf)
+        else:
+            if website_role:
+                headline = website_role if "website" in website_role.lower() else f"{website_role} (from website)"
+            else:
+                headline = "Founder (profile unverified)"
+            role = website_role or "Founder (profile unverified)"
+            gaps.append(f"LinkedIn profile and professional background for {name} not established.")
+
+        source_id = ""
+        for s in getattr(evidence, "sources", []):
+            if p_url and s.url == p_url:
+                source_id = s.source_id
+                break
+        if not source_id and getattr(evidence, "sources", []):
+            for s in evidence.sources:
+                if s.source_type == "SOCIAL_MEDIA":
+                    source_id = s.source_id
+                    break
+
+        sections_available: list[str] = []
+        if profile and has_profile_data:
+            if headline and headline != NOT_ESTABLISHED:
+                sections_available.append("headline")
+            if location and location != NOT_ESTABLISHED:
+                sections_available.append("location")
+            if profile.summary and profile.summary != NOT_ESTABLISHED:
+                sections_available.append("about")
+            if profile.experience:
+                sections_available.append("experience")
+            if profile.education:
+                sections_available.append("education")
+            if getattr(profile, "skills", None):
+                sections_available.append("skills")
+            if getattr(profile, "certifications", None):
+                sections_available.append("certifications")
+            if getattr(profile, "languages", None):
+                sections_available.append("languages")
+
+            if p_url.startswith("manual:"):
+                retrieval_status = "user_provided"
+                source_type = "user_supplied"
+            else:
+                retrieval_status = "retrieved"
+                source_type = "linkedin_public"
+
+            identity_status = getattr(profile, "identity_status", "verified") or "verified"
+            if identity_status in ("likely_match", "unverified"):
+                retrieval_status = "identity_unverified"
+        else:
+            if linkedin_blocked:
+                retrieval_status = "blocked_by_bot_protection"
+            else:
+                retrieval_status = "not_found"
+            source_type = "linkedin_public"
+            identity_status = "unverified"
+
+        website_data = None
+        if team_info:
+            website_data = {
+                "name": name,
+                "role": team_info.get("role", "Founder"),
+                "lines": [
+                    ["Role", team_info.get("role", "")],
+                    ["Role source", f"Company website: {team_info.get('url', '')}"],
+                    ["Supporting quote", team_info.get("quote", "").replace("\n", " — ")],
+                ],
+            }
+
+        if retrieval_status == "identity_unverified":
+            founder_payload: dict[str, Any] = {
+                "founder_name": name,
+                "linkedin_url": p_url if p_url and not p_url.startswith("manual:") else "",
+                "headline": website_role or "Founder (candidate unverified)",
+                "location": None,
+                "about": None,
+                "experience_timeline": [],
+                "education": [],
+                "skills": [],
+                "certifications": [],
+                "languages": [],
+                "retrieval": {
+                    "status": "identity_unverified",
+                    "source_type": source_type,
+                    "retrieved_at": retrieved_time,
+                    "source_id": source_id,
+                    "sections_available": [],
+                    "warnings": ["Identity unverified — candidate requires user confirmation in Candidate Review."],
+                    "verification_reason": getattr(profile, "verification_reason", "") or "Unverified candidate match",
+                },
+                "cross_checks": [],
+                "identity_status": identity_status,
+                "website_data": website_data,
+            }
+        else:
+            founder_payload = {
+                "founder_name": name,
+                "linkedin_url": p_url if p_url and not p_url.startswith("manual:") else "",
+                "headline": headline or (f"{website_role} (from website)" if website_role else None),
+                "location": location if location != NOT_ESTABLISHED else None,
+                "about": clean_summary if profile and profile.summary and clean_summary != NOT_ESTABLISHED else None,
+                "experience_timeline": [
+                    {
+                        "title": exp.get("title") or exp.get("role", ""),
+                        "company": exp.get("company", ""),
+                        "start": exp.get("start", ""),
+                        "end": exp.get("end", ""),
+                        "duration": exp.get("duration", "") or exp.get("end", ""),
+                        "description": exp.get("description", ""),
+                        "is_current": bool(exp.get("is_current")) or "present" in (str(exp.get("duration", "")) + str(exp.get("end", ""))).lower(),
+                    }
+                    for exp in (profile.experience if profile else [])
+                ],
+                "education": [
+                    {
+                        "school": edu.get("school") or edu.get("institution", ""),
+                        "degree": edu.get("degree", ""),
+                        "field": edu.get("field", ""),
+                        "start_year": str(edu.get("start_year") or edu.get("year", "")),
+                        "end_year": str(edu.get("end_year") or ""),
+                    }
+                    for edu in (profile.education if profile else [])
+                ],
+                "skills": getattr(profile, "skills", []) or [],
+                "certifications": getattr(profile, "certifications", []) or [],
+                "languages": getattr(profile, "languages", []) or [],
+                "retrieval": {
+                    "status": retrieval_status,
+                    "source_type": source_type,
+                    "retrieved_at": retrieved_time,
+                    "source_id": source_id,
+                    "sections_available": sections_available,
+                    "warnings": ["LinkedIn public profile blocked by bot protection"] if retrieval_status == "blocked_by_bot_protection" else [],
+                    "verification_reason": getattr(profile, "verification_reason", "") or "",
+                },
+                "cross_checks": [
+                    {
+                        "field_name": conf.field_name,
+                        "website_value": conf.website_value,
+                        "linkedin_value": conf.linkedin_value,
+                        "details": conf.details,
+                        "severity": conf.severity,
+                    }
+                    for conf in (conflicts if profile else [])
+                ],
+                "identity_status": identity_status,
+                "website_data": website_data,
+            }
+
+        founder_profile_blocks.append(["founder_profile", f"Founder profile: {name}", founder_payload])
+
+    # ONE section-level notice if any profiles could not be retrieved
+    unretrieved_count = len(founder_names) - retrieved_count
+    if unretrieved_count > 0:
+        if linkedin_blocked:
+            blocks.append([
+                "para",
+                "LinkedIn retrieval notice",
+                "Public LinkedIn profiles could not be retrieved from this server due to automated bot protection. "
+                "Profiles can be provided manually via Candidate Review text/PDF upload or by refreshing from an authorized network.",
+            ])
+        else:
+            blocks.append([
+                "para",
+                "Founder profile notice",
+                f"Public LinkedIn profiles for {unretrieved_count} founder(s) were not identified or could not be retrieved from public search. "
+                "Profiles can be provided manually via Candidate Review text/PDF upload or by entering a direct URL.",
+            ])
+
+    blocks.extend(founder_profile_blocks)
+
+    if all_conflicts:
+        blocks.append([
+            "list",
+            "Differences found - verify",
+            [c.details for c in all_conflicts],
+        ])
 
     if gaps:
-        deduped_gaps = list(dict.fromkeys(gaps))
-        blocks.append(["list", "Information gaps", deduped_gaps])
+        blocks.append(["list", "Information gaps", gaps])
 
     return {
         "key": "team",
         "title": "Founder & team",
-        "ribbon": [],
+        "ribbon": ribbon,
         "blocks": blocks,
     }
 
@@ -347,7 +572,7 @@ def _extract_product_from_pages(pages: list[Any]) -> str | None:
                 if lines:
                     return " ".join(lines[:4])[:600]
             if page.description and len(page.description.strip()) > 10:
-                return page.description.strip()
+                return str(page.description.strip())
     return None
 
 
@@ -952,7 +1177,7 @@ def _build_founder_cards(
                 lines.append(["Current role", profile.headline])
 
             if profile.summary:
-                fit = profile.summary[:300]
+                fit = discard_contact_info(profile.summary)[:300]
             elif profile.headline:
                 fit = f"{name}'s background as {profile.headline} is relevant to {name}'s role."
 
@@ -997,7 +1222,7 @@ def _build_founder_cards(
                 else:
                     lines.append(["Role source", "Provided by user (unverified)"])
                     lines.append(["Background status", "Named in screening request; education and prior operating experience unverified from public sources; flagged as an actionable diligence request under Information to prepare."])
-                    fit = "Founder named in screening request; public background could not be corroborated from public sources and is flagged under Information to prepare."
+                    fit = ""
                     role = "Founder (provided by user)"
 
         cards.append({
@@ -1056,7 +1281,7 @@ def _extract_merged_company_overview(evidence: Evidence, company_name: str) -> s
     # Try search snippets
     snippets = getattr(evidence, "search_snippets", {})
     if "company" in snippets and snippets["company"]:
-        return snippets["company"].strip()
+        return str(snippets["company"].strip())
 
     return NOT_ESTABLISHED
 
@@ -1075,7 +1300,7 @@ def _extract_about_from_pages(pages: list[Any]) -> str | None:
     for page in pages:
         desc = getattr(page, "description", "")
         if desc and len(desc.strip()) > 15 and not _is_boilerplate(desc):
-            return desc.strip()
+            return str(desc.strip())
 
     # 3. Prefer narrative lines from about/story/team/mission pages
     for page in pages:

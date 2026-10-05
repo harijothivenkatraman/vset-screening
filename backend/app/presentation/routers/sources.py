@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.application.services.get_sources import GetSourcesService
 from app.presentation.dependencies import get_sources_service
+from app.presentation.guards.api_key_guard import verify_read_or_admin_key
 from app.presentation.schemas.source_schemas import (
     SourceItemResponse,
     SourcesResponse,
@@ -10,7 +11,7 @@ from app.presentation.schemas.source_schemas import (
 router = APIRouter(prefix="/companies/{slug}/sources", tags=["sources"])
 
 
-@router.get("", response_model=SourcesResponse)
+@router.get("", response_model=SourcesResponse, dependencies=[Depends(verify_read_or_admin_key)])
 async def get_sources(
     slug: str,
     service: GetSourcesService = Depends(get_sources_service),

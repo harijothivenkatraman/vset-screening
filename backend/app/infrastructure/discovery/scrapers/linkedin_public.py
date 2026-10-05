@@ -189,8 +189,10 @@ class LinkedInPublicScraper(ProfileScraperPort):
         for tag in soup.find_all("meta"):
             prop = tag.get("property") or tag.get("name") or ""
             content = tag.get("content") or ""
-            if prop and content:
-                og[prop.lower()] = content.strip()
+            prop_str = str(prop) if not isinstance(prop, list) else " ".join(prop)
+            content_str = str(content) if not isinstance(content, list) else " ".join(content)
+            if prop_str and content_str:
+                og[prop_str.lower()] = content_str.strip()
         return og
 
     def parse_company_html(
@@ -469,10 +471,10 @@ class LinkedInPublicScraper(ProfileScraperPort):
             )
 
         res = await self._fetch_html(normalized_url)
-        if len(res) == 5:
-            status, final_url, html, is_auth_walled, is_bot_blocked = res
+        if len(res) >= 5:
+            status, final_url, html, is_auth_walled, is_bot_blocked = res[0], res[1], res[2], res[3], res[4]
         else:
-            status, final_url, html, is_auth_walled = res  # type: ignore[misc]
+            status, final_url, html, is_auth_walled = res[0], res[1], res[2], res[3]
             is_bot_blocked = status in (403, 429) or ("challenges.cloudflare.com" in html) or ("just a moment..." in html[:1000].lower())
 
         bytes_count = len(html.encode("utf-8")) if html else 0
@@ -564,10 +566,10 @@ class LinkedInPublicScraper(ProfileScraperPort):
             )
 
         res = await self._fetch_html(normalized_url)
-        if len(res) == 5:
-            status, final_url, html, is_auth_walled, is_bot_blocked = res
+        if len(res) >= 5:
+            status, final_url, html, is_auth_walled, is_bot_blocked = res[0], res[1], res[2], res[3], res[4]
         else:
-            status, final_url, html, is_auth_walled = res  # type: ignore[misc]
+            status, final_url, html, is_auth_walled = res[0], res[1], res[2], res[3]
             is_bot_blocked = status in (403, 429) or ("challenges.cloudflare.com" in html) or ("just a moment..." in html[:1000].lower())
 
         bytes_count = len(html.encode("utf-8")) if html else 0

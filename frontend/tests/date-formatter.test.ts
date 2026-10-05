@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { formatDisplayDate } from "@/shared/lib/date-formatter";
+import { formatDisplayDate, formatChipDate } from "@/shared/lib/date-formatter";
 
 describe("Date Formatter", () => {
   it("formats strict YYYY-MM-DD dates into UTC en-GB format", () => {
@@ -21,4 +21,12 @@ describe("Date Formatter", () => {
     expect(formatDisplayDate(undefined)).toBe("");
     expect(formatDisplayDate("")).toBe("");
   });
+
+  it("formats source chip timestamps into short month en-GB UTC format", () => {
+    expect(formatChipDate("2026-10-03T14:30:00Z")).toBe("3 Oct 2026");
+    expect(formatChipDate("2026-09-28")).toBe("28 Sept 2026");
+    expect(formatChipDate(null)).toBe("");
+    expect(formatChipDate(undefined)).toBe("");
+  });
 });
+

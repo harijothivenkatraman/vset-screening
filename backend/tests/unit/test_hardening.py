@@ -92,7 +92,7 @@ class TestProductionSecurityValidation:
         assert s2.CORS_ORIGINS == ["https://dashboard.example.com"]
 
     def test_development_allows_defaults(self):
-        dev_settings = Settings(ENVIRONMENT="development")
+        dev_settings = Settings(ENVIRONMENT="development", _env_file=None)
         assert dev_settings.ENVIRONMENT == "development"
         assert "*" in dev_settings.CORS_ORIGINS
 

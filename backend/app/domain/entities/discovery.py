@@ -74,8 +74,8 @@ class PersonProfile:
     headline: str | None = None
     location: str | None = None
     summary: str | None = None
-    education: list[dict[str, str]] = field(default_factory=list)
-    experience: list[dict[str, str]] = field(default_factory=list)
+    education: list[dict[str, Any]] = field(default_factory=list)
+    experience: list[dict[str, Any]] = field(default_factory=list)
     follower_count: int | None = None
     connection_count: int | None = None
     avatar_url: str | None = None
@@ -83,7 +83,72 @@ class PersonProfile:
     retrieved_at: str = ""
     is_auth_walled: bool = False
     raw_json_ld: dict[str, Any] = field(default_factory=dict)
+    skills: list[str] = field(default_factory=list)
+    certifications: list[str] = field(default_factory=list)
+    languages: list[str] = field(default_factory=list)
+    identity_status: str = "verified"
+    verification_reason: str = ""
 
+
+@dataclass(frozen=True)
+class ExperienceItem:
+    """A single position in a person's career timeline."""
+    title: str
+    company: str
+    start: str = ""
+    end: str = ""
+    duration: str = ""
+    description: str = ""
+    is_current: bool = False
+
+
+@dataclass(frozen=True)
+class EducationItem:
+    """A single educational qualification."""
+    school: str
+    degree: str = ""
+    field: str = ""
+    start_year: str = ""
+    end_year: str = ""
+
+
+@dataclass(frozen=True)
+class CrossCheckConflict:
+    """A discrepancy between website claims and LinkedIn profile."""
+    field_name: str
+    website_value: str
+    linkedin_value: str
+    details: str
+    severity: str = "low"  # "Differences found - verify"
+
+
+@dataclass(frozen=True)
+class FounderRetrievalInfo:
+    """Provenance and retrieval state for a founder's profile."""
+    status: str  # "retrieved" | "identity_unverified" | "not_found" | "blocked" | "manual_entry"
+    source_type: str  # "linkedin_public" | "manual_text" | "manual_pdf" | "website"
+    retrieved_at: str = ""
+    source_id: str = ""
+    sections_available: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+    verification_reason: str = ""
+
+
+@dataclass(frozen=True)
+class FounderProfile:
+    """Rich founder profile data model for the Founder Profiles report tab."""
+    founder_name: str
+    linkedin_url: str = ""
+    headline: str | None = None
+    location: str | None = None
+    about: str | None = None
+    experience_timeline: list[ExperienceItem] = field(default_factory=list)
+    education: list[EducationItem] = field(default_factory=list)
+    skills: list[str] = field(default_factory=list)
+    certifications: list[str] = field(default_factory=list)
+    retrieval_info: FounderRetrievalInfo | None = None
+    cross_checks: list[CrossCheckConflict] = field(default_factory=list)
+    identity_status: str = "verified"  # "verified" | "likely_match" | "unverified"
 
 @dataclass(frozen=True)
 class PageContent:
@@ -136,6 +201,7 @@ class Evidence:
     warnings: list[str] = field(default_factory=list)
     manual_evidence: dict[str, Any] = field(default_factory=dict)
     multi_source_fields: dict[str, Any] = field(default_factory=dict)
+    detailed_founder_profiles: list[FounderProfile] = field(default_factory=list)
 
 
 @dataclass
@@ -156,6 +222,7 @@ class DiscoveryJob:
     error_message: str | None = None
     diagnostics: list[SourceDiagnostic] = field(default_factory=list)
     manual_evidence: dict[str, Any] = field(default_factory=dict)
+    llm_model: str | None = None
 
     def transition_to(self, new_state: JobState) -> None:
         """Enforce state machine transitions."""

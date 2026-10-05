@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.application.services.get_actions import GetActionsService
 from app.presentation.dependencies import get_actions_service
+from app.presentation.guards.api_key_guard import verify_read_or_admin_key
 from app.presentation.schemas.action_schemas import (
     ActionPresentationResponse,
     ActionsResponse,
@@ -14,7 +15,7 @@ from app.presentation.schemas.action_schemas import (
 router = APIRouter(prefix="/companies/{slug}/actions", tags=["actions"])
 
 
-@router.get("", response_model=ActionsResponse)
+@router.get("", response_model=ActionsResponse, dependencies=[Depends(verify_read_or_admin_key)])
 async def get_actions(
     slug: str,
     service: GetActionsService = Depends(get_actions_service),

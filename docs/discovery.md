@@ -123,3 +123,32 @@ To host Ollama on an office GPU workstation and allow Lightsail to connect over 
   - After 3 consecutive blocks, an automated circuit breaker pauses LinkedIn requests for 30 minutes (`circuit_breaker_open`).
   - Screening reports plainly state in Tab 9 limitations: `"LinkedIn could not be retrieved from this server."`
 - **Fallback**: The multi-source pipeline gathers company and founder details from official website deep crawls (sitemap, /team, /about), ICANN RDAP registration records, news/GDELT, and user-supplied manual evidence.
+
+---
+
+## 7. Founder Profiles Tab & Privacy Safeguards
+
+- **Dedicated Tab**: The screening dashboard features a dedicated "Founder profiles" tab (`founder_profiles`) adjacent to "Founder & team". Each founder has a dedicated profile card displaying their headline, location, about, experience timeline, education, skills, certifications, and provenance.
+
+### Field-Availability Matrix (Logged-Out LinkedIn Profile vs. Protected Data)
+
+| Field Category | Logged-Out Public Web Profile | Authenticated / Protected | vSET Handling & Storage |
+|---|---|---|---|
+| **Full Name** | Available | Available | Extracted & verified against target founder |
+| **Headline** | Available | Available | Extracted; used as primary professional role |
+| **Location** | Available (City/Region) | Available | Extracted; "Not established" if omitted |
+| **About / Summary** | Available (often truncated) | Full text | Extracted; contact headers discarded |
+| **Experience Timeline** | Current & recent roles (Title, Company, Dates) | Full career history | Extracted chronologically; current role marked |
+| **Education** | Available (School, Degree, Field, Years) | Available | Extracted; degree & dates preserved |
+| **Skills & Certifications** | Top skills / certifications only | Full endorsed list | Extracted where exposed; omitted sections noted |
+| **Contact Info (Email/Phone)** | **Not Available** (Behind authwall) | Available to 1st degree | **Strictly Discarded / Scrubbed** (Never stored) |
+| **Profile Photos** | Auth-walled or restricted CDN | Available | **Initials Avatar Only** (Never hotlinked) |
+| **Connections & Activity** | **Not Available** | Full network & posts | Not requested or collected |
+
+- **Privacy Hardening**:
+  - The Contact block (emails, phone numbers, personal URLs) is strictly discarded during manual text/PDF parsing and never persisted in database or raw snapshot JSON.
+  - Raw JSON audit snapshots exclude raw profile text, contact info, and photo URLs.
+  - Cascade Deletion: `DELETE /api/v1/companies/{slug}` (authenticated via `X-API-Key`) cascades and permanently deletes the company, its reports, sections, sources, and audit snapshots.
+- **Identity Verification & Cross-Checks**:
+  - Auto-attachment requires strong signals (found on company website near founder's name, profile links verified domain, or user confirmed). Name + company name alone yields `likely_match` requiring user review.
+  - Cross-checks normalize executive titles (e.g. CEO == Chief Executive Officer, Co-founder == Founder) and only flag genuine contradictions with low severity label `"Differences found - verify"`.

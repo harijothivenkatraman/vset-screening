@@ -27,3 +27,21 @@ dist/
 Thumbs.db
 .idea/
 .vscode/
+
+# Temporary and local artifacts
+*.tar.gz
+scratch/
+backend/scratch/
+screenshots/
+*.png
+*.log
+
+# Local test & runner scratch scripts (root only)
+/test_*.sh
+/test_*.py
+/run_*.py
+/inspect_job.py
+/lightsail_*.py
+/update_env.py
+/prompt_*.md
+**/take_*.js

@@ -43,7 +43,7 @@ def load_golden_reference(path: Path) -> dict[str, Any]:
 
     sections = data.get("canonical", {}).get("content", {}).get("sections", [])
 
-    def get_sec(title: str) -> dict:
+    def get_sec(title: str) -> dict[str, Any]:
         return next((s for s in sections if s.get("title") == title), {})
 
     sec0 = get_sec("Key facts & context")
@@ -88,10 +88,10 @@ def load_golden_reference(path: Path) -> dict[str, Any]:
 
 class CapturingReportImportAdapter(ReportImportPort):
     def __init__(self) -> None:
-        self.imported_reports: dict[str, dict] = {}
+        self.imported_reports: dict[str, dict[str, Any]] = {}
 
-    async def import_report(self, report_json: dict) -> ImportResult:
-        slug = report_json["canonical"]["meta"]["report_id"]
+    async def import_report(self, report_json: dict[str, Any]) -> ImportResult:
+        slug = str(report_json["canonical"]["meta"]["report_id"])
         self.imported_reports[slug] = report_json
         return ImportResult(status="created", company_slug=slug, message="Imported")
 
@@ -122,7 +122,7 @@ class SimulatedBlockedLinkedInScraper(ProfileScraperPort):
         )
 
 
-async def run_terraspark_pipeline() -> tuple[DiscoveryJob, dict | None]:
+async def run_terraspark_pipeline() -> tuple[DiscoveryJob, dict[str, Any] | None]:
     job_id = f"job-bench-tp-{uuid.uuid4().hex[:8]}"
     now = datetime.now(timezone.utc)
     job = DiscoveryJob(
@@ -160,15 +160,15 @@ async def run_terraspark_pipeline() -> tuple[DiscoveryJob, dict | None]:
     )
 
     await service.execute(job)
-    final_job = await job_store.get(job_id)
+    final_job = await job_store.get(job_id) or job
     report = report_importer.imported_reports.get(final_job.result_slug) if final_job.result_slug else None
     return final_job, report
 
 
-def evaluate_report(report: dict, golden: dict[str, Any]) -> dict[str, dict]:
+def evaluate_report(report: dict[str, Any], golden: dict[str, Any]) -> dict[str, dict[str, Any]]:
     sections = report.get("canonical", {}).get("content", {}).get("sections", [])
 
-    def get_section(key: str) -> dict:
+    def get_section(key: str) -> dict[str, Any]:
         return next((s for s in sections if s.get("key") == key), {})
 
     company_sec = get_section("company")
@@ -204,7 +204,7 @@ def evaluate_report(report: dict, golden: dict[str, Any]) -> dict[str, dict]:
         if b[0] == "para" and b[1] in ("Financing position", "Funding overview"):
             finance_text = str(b[2])
 
-    results: dict[str, dict] = {}
+    results: dict[str, dict[str, Any]] = {}
 
     # 1. Sector
     gen_sector = company_kv.get("Sector", "")
@@ -296,7 +296,7 @@ def evaluate_report(report: dict, golden: dict[str, Any]) -> dict[str, dict]:
     return results
 
 
-def evaluate_section_coverage(report: dict) -> list[dict[str, Any]]:
+def evaluate_section_coverage(report: dict[str, Any]) -> list[dict[str, Any]]:
     """Evaluate coverage across all 7 canonical sections of the report."""
     sections = report.get("canonical", {}).get("content", {}).get("sections", [])
     coverage_rows = []

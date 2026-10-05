@@ -2,6 +2,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.domain.entities.section import Section
 from app.application.mappers.action_mapper import map_action_items_from_raw
 from app.application.mappers.report_meta_mapper import (
     generate_slug,
@@ -31,6 +32,145 @@ class ImportResult:
             "company_slug": self.company_slug,
             "message": self.message,
         }
+
+
+STATUS_RANK: dict[str, int] = {
+    "retrieved": 4,
+    "user_provided": 4,
+    "identity_unverified": 2,
+    "blocked_by_bot_protection": 1,
+    "not_found": 0,
+}
+
+
+def merge_sections_preserve_quality(new_sections: list[Section], existing_sections: list[Section]) -> list[Section]:
+    """Ensures refresh never downgrades existing good data or status."""
+    if not existing_sections:
+        return new_sections
+
+    old_sec_map = {s.key: s for s in existing_sections}
+    merged_sections: list[Section] = []
+
+    # Collect all existing founder profile blocks across all existing sections (team, founder_profiles, etc.)
+    old_founder_blocks: dict[str, Any] = {}
+    for s in existing_sections:
+        for b in s.blocks:
+            if isinstance(b, list) and len(b) >= 3 and b[0] == "founder_profile" and isinstance(b[2], dict):
+                fname = str(b[2].get("founder_name", "")).strip().lower()
+                if fname:
+                    status = str(b[2].get("retrieval", {}).get("status", "not_found"))
+                    rank = STATUS_RANK.get(status, 0)
+                    existing = old_founder_blocks.get(fname)
+                    if existing:
+                        ex_status = str(existing[2].get("retrieval", {}).get("status", "not_found"))
+                        ex_rank = STATUS_RANK.get(ex_status, 0)
+                        if rank > ex_rank:
+                            old_founder_blocks[fname] = b
+                    else:
+                        old_founder_blocks[fname] = b
+
+    for new_sec in new_sections:
+        old_sec = old_sec_map.get(new_sec.key)
+        if not old_sec:
+            # Special case for team section: even if team had no old_sec, check if old_founder_blocks exist
+            if new_sec.key == "team" and old_founder_blocks:
+                updated_blocks: list[Any] = []
+                seen_founders: set[str] = set()
+                for b in new_sec.blocks:
+                    if isinstance(b, list) and len(b) >= 3 and b[0] == "founder_profile" and isinstance(b[2], dict):
+                        fname = str(b[2].get("founder_name", "")).strip().lower()
+                        seen_founders.add(fname)
+                        old_b = old_founder_blocks.get(fname)
+                        if old_b:
+                            new_status = str(b[2].get("retrieval", {}).get("status", "not_found"))
+                            old_status = str(old_b[2].get("retrieval", {}).get("status", "not_found"))
+                            new_rank = STATUS_RANK.get(new_status, 0)
+                            old_rank = STATUS_RANK.get(old_status, 0)
+                            if old_rank > new_rank:
+                                updated_blocks.append(old_b)
+                                continue
+                    updated_blocks.append(b)
+                # If any old founders were omitted from new_sec, preserve them!
+                for fname, old_b in old_founder_blocks.items():
+                    if fname not in seen_founders:
+                        updated_blocks.append(old_b)
+                merged_sections.append(
+                    Section(
+                        id=new_sec.id,
+                        report_id=new_sec.report_id,
+                        key=new_sec.key,
+                        title=new_sec.title,
+                        position=new_sec.position,
+                        ribbon=new_sec.ribbon,
+                        blocks=updated_blocks,
+                        created_at=new_sec.created_at,
+                    )
+                )
+                continue
+            merged_sections.append(new_sec)
+            continue
+
+        # If new section has no blocks but old section had blocks, retain old blocks
+        if not new_sec.blocks and old_sec.blocks:
+            merged_sections.append(
+                Section(
+                    id=new_sec.id,
+                    report_id=new_sec.report_id,
+                    key=new_sec.key,
+                    title=new_sec.title,
+                    position=new_sec.position,
+                    ribbon=new_sec.ribbon,
+                    blocks=old_sec.blocks,
+                    created_at=new_sec.created_at,
+                )
+            )
+            continue
+
+        final_blocks = list(new_sec.blocks)
+        if new_sec.key == "team" and old_founder_blocks:
+            updated_blocks = []
+            seen_founders = set()
+            for b in new_sec.blocks:
+                if isinstance(b, list) and len(b) >= 3 and b[0] == "founder_profile" and isinstance(b[2], dict):
+                    fname = str(b[2].get("founder_name", "")).strip().lower()
+                    seen_founders.add(fname)
+                    old_b = old_founder_blocks.get(fname)
+                    if old_b:
+                        new_status = str(b[2].get("retrieval", {}).get("status", "not_found"))
+                        old_status = str(old_b[2].get("retrieval", {}).get("status", "not_found"))
+                        new_rank = STATUS_RANK.get(new_status, 0)
+                        old_rank = STATUS_RANK.get(old_status, 0)
+                        # If existing had higher quality (e.g. retrieved/user_provided) and new is blocked/unverified, do not downgrade!
+                        if old_rank > new_rank:
+                            updated_blocks.append(old_b)
+                            continue
+                updated_blocks.append(b)
+            # If any old founders were omitted from new_sec, preserve them!
+            for fname, old_b in old_founder_blocks.items():
+                if fname not in seen_founders:
+                    updated_blocks.append(old_b)
+            final_blocks = updated_blocks
+
+        merged_sections.append(
+            Section(
+                id=new_sec.id,
+                report_id=new_sec.report_id,
+                key=new_sec.key,
+                title=new_sec.title,
+                position=new_sec.position,
+                ribbon=new_sec.ribbon,
+                blocks=final_blocks,
+                created_at=new_sec.created_at,
+            )
+        )
+
+    # Preserve any non-founder sections from existing_sections that were omitted in new_sections
+    new_sec_keys = {s.key for s in new_sections}
+    for old_sec in existing_sections:
+        if old_sec.key not in new_sec_keys and old_sec.key != "founder_profiles":
+            merged_sections.append(old_sec)
+
+    return merged_sections
 
 
 class ReportImportService:
@@ -83,13 +223,17 @@ class ReportImportService:
             updated_report = map_report_from_raw(raw_data, company_id=company.id, existing_id=existing_report.id)
             report = await self._report_repo.save(updated_report)
 
+            # Fetch existing sections before deletion to prevent downgrading good data on refresh
+            existing_sections = await self._section_repo.find_by_report_id(report.id)
+
             # Delete old child entities
             await self._section_repo.delete_by_report_id(report.id)
             await self._action_item_repo.delete_by_report_id(report.id)
             await self._source_repo.delete_by_report_id(report.id)
 
-            # Save new child entities
-            sections = map_sections_from_raw(raw_data, report.id)
+            # Save new child entities (ensuring refresh never downgrades good data)
+            raw_sections = map_sections_from_raw(raw_data, report.id)
+            sections = merge_sections_preserve_quality(raw_sections, existing_sections)
             await self._section_repo.save_many(sections)
 
             actions = map_action_items_from_raw(raw_data, report.id)

@@ -312,7 +312,7 @@ class NewsSource(EvidenceSourcePort):
             all_fields_found.add("founded_year")
 
         top_art = disambiguated_articles[0]
-        item = EvidenceItem(
+        primary_item = EvidenceItem(
             source_id=f"src_news_{company_name.lower().replace(' ', '_')}",
             source_type="NEWS",
             url=top_art["url"],
@@ -322,7 +322,7 @@ class NewsSource(EvidenceSourcePort):
             publisher="News Media",
             title=top_art["title"],
         )
-        evidence_items.append(item)
+        evidence_items.append(primary_item)
 
         # Emit distinct round evidence items with exact citations and quotes
         for r in funding_facts:

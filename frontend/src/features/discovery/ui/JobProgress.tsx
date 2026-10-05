@@ -9,6 +9,7 @@ import {
   Sparkles,
   AlertTriangle,
   Activity,
+  Users,
 } from "lucide-react";
 import { Button } from "@/shared/ui/Button";
 import { Card } from "@/shared/ui/Card";
@@ -17,7 +18,9 @@ import { useDiscoveryJobStatus } from "../hooks";
 
 interface JobProgressProps {
   jobId: string;
+  apiKey?: string;
   onReset: () => void;
+  onBackToReview?: () => void;
 }
 
 const STAGES = [
@@ -31,8 +34,8 @@ const STAGES = [
   { label: "Complete", threshold: 1.0 },
 ];
 
-export const JobProgress: React.FC<JobProgressProps> = ({ jobId, onReset }) => {
-  const { data: job, isLoading, error } = useDiscoveryJobStatus(jobId);
+export const JobProgress: React.FC<JobProgressProps> = ({ jobId, apiKey, onReset, onBackToReview }) => {
+  const { data: job, isLoading, error } = useDiscoveryJobStatus(jobId, apiKey);
 
   if (isLoading || !job) {
     return (
@@ -133,6 +136,79 @@ export const JobProgress: React.FC<JobProgressProps> = ({ jobId, onReset }) => {
         </div>
       </div>
 
+      {/* Per-Founder Profile Status */}
+      {job.diagnostics &&
+        job.diagnostics.some(
+          (d) =>
+            d.url.includes("linkedin.com/in/") ||
+            d.url.startsWith("manual:founder") ||
+            d.url.includes("founder")
+        ) && (
+          <div className="p-4 bg-slate-50 rounded-lg border border-slate-200 space-y-2 text-xs">
+            <div className="flex items-center justify-between">
+              <span className="font-semibold text-slate-700 uppercase tracking-wider text-[10px] flex items-center gap-1.5">
+                <Users className="w-3.5 h-3.5 text-slate-500" />
+                Founder Profiles Status
+              </span>
+            </div>
+            <div className="space-y-1.5">
+              {job.diagnostics
+                .filter(
+                  (d) =>
+                    d.url.includes("linkedin.com/in/") ||
+                    d.url.startsWith("manual:founder") ||
+                    d.url.includes("founder")
+                )
+                .map((d, idx) => {
+                  const isBlocked =
+                    d.outcome === "blocked_by_bot_protection" ||
+                    d.outcome === "circuit_breaker_open" ||
+                    d.outcome.includes("403");
+                  const isOk = d.outcome === "ok";
+                  const isManual = d.url.startsWith("manual:");
+                  const founderName =
+                    d.url.split("/in/")[1]?.split("/")[0]?.replace(/-/g, " ") ||
+                    d.url.replace("manual:founder_", "").replace(/_/g, " ");
+
+                  return (
+                    <div
+                      key={idx}
+                      className="flex items-center justify-between p-2.5 rounded bg-white border border-slate-200 text-xs gap-2"
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="font-semibold text-slate-900 capitalize truncate">
+                          {founderName}
+                        </span>
+                        <span className="text-[11px] text-slate-500 font-mono truncate hidden sm:inline">
+                          {d.url}
+                        </span>
+                      </div>
+                      <div className="shrink-0">
+                        {isManual ? (
+                          <Badge variant="navy" className="text-[10px] py-0.5 px-2">
+                            User provided
+                          </Badge>
+                        ) : isOk ? (
+                          <Badge variant="success" className="text-[10px] py-0.5 px-2">
+                            Retrieved
+                          </Badge>
+                        ) : isBlocked ? (
+                          <Badge variant="warning" className="text-[10px] py-0.5 px-2">
+                            Blocked by bot protection
+                          </Badge>
+                        ) : (
+                          <Badge variant="warning" className="text-[10px] py-0.5 px-2">
+                            {d.outcome}
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+          </div>
+        )}
+
       {/* Retrieval Log (per-source diagnostics) */}
       {job.diagnostics && job.diagnostics.length > 0 && (
         <div className="p-4 bg-slate-50 rounded-lg border border-slate-200 space-y-2 text-xs">
@@ -149,7 +225,11 @@ export const JobProgress: React.FC<JobProgressProps> = ({ jobId, onReset }) => {
               const isRobots = diag.outcome === "robots_blocked";
               const isSsrf = diag.outcome === "ssrf_blocked";
 
-              const badgeVariant = isOk ? "success" : isAuthWall || isRobots ? "warning" : "neutral";
+              const badgeVariant: "success" | "warning" | "default" = isOk
+                ? "success"
+                : isAuthWall || isRobots
+                ? "warning"
+                : "default";
               const badgeLabel = isOk
                 ? "OK"
                 : isAuthWall
@@ -235,6 +315,16 @@ export const JobProgress: React.FC<JobProgressProps> = ({ jobId, onReset }) => {
               <RotateCcw className="w-4 h-4" />
               Discover Another Company
             </span>
+          </Button>
+        )}
+        {onBackToReview && !isDone && (
+          <Button
+            variant="outline"
+            size="lg"
+            onClick={onBackToReview}
+            className="w-full sm:w-auto mt-2 sm:mt-0"
+          >
+            Advanced: Review Sources
           </Button>
         )}
       </div>

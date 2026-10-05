@@ -19,6 +19,11 @@ const CompanyRedirect: React.FC = () => {
   return <Navigate to={`/companies/${slug || "terraspark"}/company`} replace />;
 };
 
+const FounderProfilesRedirect: React.FC = () => {
+  const { slug } = useParams<{ slug: string }>();
+  return <Navigate to={`/companies/${slug || "terraspark"}/team`} replace />;
+};
+
 export const router = createBrowserRouter([
   {
     path: "/",
@@ -43,6 +48,10 @@ export const router = createBrowserRouter([
       {
         path: "sources",
         element: <SourcesPage />,
+      },
+      {
+        path: "founder_profiles",
+        element: <FounderProfilesRedirect />,
       },
       {
         path: ":sectionKey",

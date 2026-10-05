@@ -7,6 +7,7 @@ import { OlistBlock } from "./OlistBlock";
 import { ParaBlock } from "./ParaBlock";
 import { TableBlock } from "./TableBlock";
 import { UnknownBlock } from "./UnknownBlock";
+import { FounderProfileBlock } from "./FounderProfileBlock";
 
 export interface BlockProps {
   block: [string, string, ...unknown[]];
@@ -24,6 +25,7 @@ const BLOCK_RENDERERS: Record<string, React.ComponentType<BlockProps>> = {
   table: TableBlock,
   cards: CardsBlock,
   comparison: ComparisonBlock,
+  founder_profile: FounderProfileBlock,
 };
 
 /**

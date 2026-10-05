@@ -28,22 +28,22 @@ export function useDiscoveryHealth() {
   });
 }
 
-export function useResolveCandidates() {
+export function useResolveCandidates(apiKey?: string) {
   return useMutation<ResolveCandidatesResponse, Error, ResolveCandidatesRequest>({
-    mutationFn: resolveCandidates,
+    mutationFn: (request) => resolveCandidates(request, apiKey),
   });
 }
 
-export function useStartDiscoveryJob() {
+export function useStartDiscoveryJob(apiKey?: string) {
   return useMutation<StartDiscoveryJobResponse, Error, StartDiscoveryJobRequest>({
-    mutationFn: startDiscoveryJob,
+    mutationFn: (request) => startDiscoveryJob(request, apiKey),
   });
 }
 
-export function useDiscoveryJobStatus(jobId: string | null) {
+export function useDiscoveryJobStatus(jobId: string | null, apiKey?: string) {
   return useQuery<DiscoveryJobStatus>({
-    queryKey: discoveryKeys.job(jobId || ""),
-    queryFn: () => getDiscoveryJobStatus(jobId!),
+    queryKey: apiKey ? [...discoveryKeys.job(jobId || ""), apiKey] : discoveryKeys.job(jobId || ""),
+    queryFn: () => getDiscoveryJobStatus(jobId!, apiKey),
     enabled: Boolean(jobId),
     refetchInterval: (query) => {
       const job = query.state.data;

@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from app.infrastructure.ingestion.import_service import ReportImportService
 from app.infrastructure.ingestion.version_gate import VersionGateError
 from app.presentation.dependencies import get_import_service
-from app.presentation.guards.api_key_guard import verify_api_key
+from app.presentation.guards.api_key_guard import verify_admin_key
 from app.presentation.schemas.import_schemas import ImportResponse
 
 router = APIRouter(prefix="/reports", tags=["reports"])
@@ -15,7 +15,7 @@ router = APIRouter(prefix="/reports", tags=["reports"])
     "/import",
     response_model=ImportResponse,
     status_code=status.HTTP_200_OK,
-    dependencies=[Depends(verify_api_key)],
+    dependencies=[Depends(verify_admin_key)],
 )
 async def import_report_endpoint(
     payload: dict[str, Any],

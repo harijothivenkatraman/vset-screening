@@ -87,6 +87,16 @@ export const SectionPage: React.FC = () => {
               }
               const block = blockRaw as [string, string, ...unknown[]];
               const [type, title] = block;
+
+              // Avoid duplicate Founding Team card in team section since AtAGlanceStrip already displays it
+              if ((sectionKey === "team" || sectionKey === "2") && type === "kv") {
+                const items = Array.isArray(block[2]) ? (block[2] as [string, unknown][]) : [];
+                const isOnlyFoundingTeam = items.length > 0 && items.every(([k]) => /founding\s*team/i.test(k));
+                if (isOnlyFoundingTeam) {
+                  return null;
+                }
+              }
+
               const Renderer = getBlockRenderer(type);
               const anchorId = slugifyTitle(String(title || `block-${idx}`), idx);
 

@@ -23,6 +23,8 @@ from app.application.ports.page_fetcher_port import PageFetcherPort
 from app.application.ports.profile_scraper_port import ProfileScraperPort
 from app.application.ports.report_extractor_port import ReportExtractorPort
 from app.application.ports.report_import_port import ReportImportPort
+from app.application.services.founder_url_discovery import FounderUrlDiscoveryService
+from app.application.services.identity_verifier import FounderIdentityVerifier
 from app.application.services.pdf_extractor import (
     extract_pdf_text,
     parse_manual_profile_text,
@@ -126,8 +128,10 @@ class BuildReportService:
             # Step 4c: Apply manual evidence if provided (text / PDF)
             self._apply_manual_evidence(job, evidence)
             
-            # Check LLM availability and record explicit warning if unavailable
+            # Check LLM availability and configure model if overridden
             if hasattr(self._report_extractor, "_llm") and self._report_extractor._llm:
+                if getattr(job, "llm_model", None):
+                    setattr(self._report_extractor._llm, "_model", job.llm_model)
                 try:
                     if not await self._report_extractor._llm.is_available():
                         job.add_warning("LLM enrichment unavailable: model not found")
@@ -252,7 +256,7 @@ class BuildReportService:
         # 2. Gather candidate subpages: in-page links + sitemap.xml
         candidate_urls: list[str] = []
         has_nav_links = bool(home_page and home_page.links)
-        if has_nav_links:
+        if has_nav_links and home_page is not None:
             candidate_urls.extend(home_page.links)
 
         has_sitemap = False
@@ -487,8 +491,14 @@ class BuildReportService:
         await self._job_store.update(job)
         
         for name in job.founder_names:
-            slug_key = f"founder_linkedin_{_slugify(name)}"
-            url = job.confirmed_urls.get(slug_key)
+            disc = FounderUrlDiscoveryService.discover_url(
+                founder_name=name,
+                company_name=job.company_name,
+                confirmed_urls=job.confirmed_urls,
+                website_pages=evidence.website_pages,
+                search_snippets=getattr(job, "search_snippets", {}),
+            )
+            url = disc.url
             if not url:
                 job.add_warning(f"No LinkedIn URL for founder: {name}")
                 diag = SourceDiagnostic(
@@ -500,20 +510,42 @@ class BuildReportService:
                 evidence.diagnostics.append(diag)
                 self._apply_founder_snippet_fallback(job, evidence, name)
                 continue
-            
+
+            slug_key = f"founder_linkedin_{_slugify(name)}"
+            if slug_key not in job.confirmed_urls:
+                job.confirmed_urls[slug_key] = url
+
             try:
                 profile, diag = await self._profile_scraper.fetch_person_with_diagnostic(url)
                 job.add_diagnostic(diag)
                 evidence.diagnostics.append(diag)
                 if profile:
-                    evidence.founder_profiles.append(profile)
-                    evidence.sources.append(EvidenceSource(
-                        source_id=generate_source_id(url),
-                        url=url,
-                        publisher="linkedin.com",
-                        source_type="SOCIAL_MEDIA",
-                        retrieved_at=profile.retrieved_at,
-                    ))
+                    company_domain = job.confirmed_urls.get("website", "")
+                    verify_res = FounderIdentityVerifier.verify(
+                        candidate_name=profile.name,
+                        target_founder_name=name,
+                        company_name=job.company_name,
+                        company_domain=company_domain,
+                        candidate_profile=profile,
+                        url_source_type=disc.source_type,
+                        candidate_url=url,
+                    )
+                    if verify_res.is_auto_attach:
+                        evidence.founder_profiles.append(profile)
+                        evidence.sources.append(EvidenceSource(
+                            source_id=generate_source_id(url),
+                            url=url,
+                            publisher="linkedin.com",
+                            source_type="SOCIAL_MEDIA",
+                            retrieved_at=profile.retrieved_at,
+                        ))
+                    elif verify_res.identity_status == "likely_match":
+                        job.add_warning(f"Founder LinkedIn match unverified: {name} ({url}) - {verify_res.reason}")
+                        self._apply_founder_snippet_fallback(job, evidence, name)
+                    else:
+                        job.add_warning(f"LinkedIn profile rejected for {name}: {verify_res.reason}")
+                        self._apply_founder_snippet_fallback(job, evidence, name)
+
                     if profile.is_auth_walled:
                         job.add_warning(f"Founder LinkedIn auth-walled: {name} ({url})")
                         self._apply_founder_snippet_fallback(job, evidence, name)
@@ -674,6 +706,11 @@ class BuildReportService:
 
             parsed = parse_manual_profile_text(combined_text)
 
+            # Privacy hardening: Discard raw text and PDF base64 so they are never retained or persisted
+            item.pop("text", None)
+            item.pop("pdf_base64", None)
+            item["parsed"] = parsed
+
             src_id = generate_source_id(f"manual_{category}_{job.id}")
             src = EvidenceSource(
                 source_id=src_id,
@@ -695,7 +732,7 @@ class BuildReportService:
             evidence.diagnostics.append(diag)
 
             if category in ("company_linkedin", "website"):
-                desc = parsed.get("description") or combined_text[:800]
+                desc = parsed.get("description") or parsed.get("summary") or ""
                 if not evidence.company_profile:
                     evidence.company_profile = CompanyProfile(
                         name=job.company_name,
@@ -739,14 +776,18 @@ class BuildReportService:
                     edu = parsed.get("education") or []
                     exp = parsed.get("experience") or []
                     headline = parsed.get("headline") or "provided by user (unverified)"
-                    summary = parsed.get("summary") or combined_text[:400]
+                    summary = parsed.get("summary") or ""
+                    loc = parsed.get("location") or None
+                    skills = parsed.get("skills") or []
+                    certs = parsed.get("certifications") or []
+                    langs = parsed.get("languages") or []
 
                     if existing_p:
                         evidence.founder_profiles.remove(existing_p)
                         merged_p = PersonProfile(
                             name=existing_p.name or matched_founder,
                             headline=existing_p.headline or headline,
-                            location=existing_p.location,
+                            location=existing_p.location or loc,
                             summary=existing_p.summary or summary,
                             education=existing_p.education if existing_p.education else edu,
                             experience=existing_p.experience if existing_p.experience else exp,
@@ -754,19 +795,31 @@ class BuildReportService:
                             connection_count=existing_p.connection_count,
                             avatar_url=existing_p.avatar_url,
                             url=existing_p.url or f"manual:{category}",
-                            retrieved_at=existing_p.retrieved_at,
+                            retrieved_at=existing_p.retrieved_at or now_iso,
                             is_auth_walled=existing_p.is_auth_walled,
                             raw_json_ld=existing_p.raw_json_ld,
+                            skills=existing_p.skills if existing_p.skills else skills,
+                            certifications=existing_p.certifications if existing_p.certifications else certs,
+                            languages=existing_p.languages if existing_p.languages else langs,
+                            identity_status="verified",
+                            verification_reason="Provided by user",
                         )
                         evidence.founder_profiles.append(merged_p)
                     else:
                         new_p = PersonProfile(
                             name=matched_founder,
                             headline=headline,
+                            location=loc,
                             summary=summary,
                             education=edu,
                             experience=exp,
+                            skills=skills,
+                            certifications=certs,
+                            languages=langs,
                             url=f"manual:{category}",
+                            retrieved_at=now_iso,
+                            identity_status="verified",
+                            verification_reason="Provided by user",
                         )
                         evidence.founder_profiles.append(new_p)
 

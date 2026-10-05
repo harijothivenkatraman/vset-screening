@@ -35,3 +35,23 @@ export function formatDisplayDate(dateStr: string | null | undefined): string {
 
   return EN_GB_FORMATTER.format(dateObj);
 }
+
+const SHORT_DATE_FORMATTER = new Intl.DateTimeFormat("en-GB", {
+  day: "numeric",
+  month: "short",
+  year: "numeric",
+  timeZone: "UTC",
+});
+
+export function formatChipDate(dateStr: string | null | undefined): string {
+  if (!dateStr || typeof dateStr !== "string") {
+    return dateStr ? String(dateStr) : "";
+  }
+  const trimmed = dateStr.trim();
+  const dateObj = new Date(trimmed);
+  if (isNaN(dateObj.getTime())) {
+    return dateStr;
+  }
+  return SHORT_DATE_FORMATTER.format(dateObj);
+}
+

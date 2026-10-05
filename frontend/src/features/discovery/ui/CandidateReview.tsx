@@ -177,6 +177,8 @@ export const CandidateReview: React.FC<CandidateReviewProps> = ({
               title={`${name} — LinkedIn Profile`}
               description={`Career timeline, education, and credentials for ${name}.`}
               categoryKey={catKey}
+              entityName={name}
+              companyName={companyName}
               candidates={resolveData.candidates[catKey] || []}
               selectedUrl={confirmedUrls[catKey] || ""}
               manualItem={manualEvidence[catKey]}
@@ -248,7 +250,7 @@ export const CandidateReview: React.FC<CandidateReviewProps> = ({
             Cancel
           </Button>
 
-          <Button type="submit" disabled={isStarting || isModelMissing} size="lg">
+          <Button type="submit" disabled={isStarting} size="lg">
             {isStarting ? (
               <span className="flex items-center gap-2">
                 <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
@@ -264,10 +266,10 @@ export const CandidateReview: React.FC<CandidateReviewProps> = ({
         </div>
 
         {isModelMissing && (
-          <div className="p-3 bg-amber-50 border border-amber-200 rounded-md text-amber-800 text-xs flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600" />
+          <div className="p-3 bg-blue-50 border border-blue-200 rounded-md text-blue-800 text-xs flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 shrink-0 text-blue-600" />
             <span>
-              LLM model not found on inference server ({health?.llm_model || "qwen2.5:7b-instruct"}). Load the model to assemble reports.
+              Report will be assembled without the language model; some fields may be less complete. Run <code>ollama pull {health?.llm_model || "qwen2.5:7b-instruct"}</code> to enable full extraction.
             </span>
           </div>
         )}
@@ -280,6 +282,8 @@ interface ReviewCategorySectionProps {
   title: string;
   description: string;
   categoryKey: string;
+  entityName?: string;
+  companyName?: string;
   candidates: CandidateItem[];
   selectedUrl: string;
   placeholder: string;
@@ -293,6 +297,9 @@ interface ReviewCategorySectionProps {
 const ReviewCategorySection: React.FC<ReviewCategorySectionProps> = ({
   title,
   description,
+  categoryKey,
+  entityName,
+  companyName,
   candidates,
   selectedUrl,
   placeholder,
@@ -302,11 +309,25 @@ const ReviewCategorySection: React.FC<ReviewCategorySectionProps> = ({
   onManualTextChange,
   onManualPdfChange,
 }) => {
+  const isFounder = categoryKey.startsWith("founder_linkedin_");
+
   return (
     <Card className="p-5 border border-slate-200 space-y-3">
       <div>
-        <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wide">{title}</h3>
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wide">{title}</h3>
+          {isFounder && (
+            <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+              Identity Verification Active
+            </span>
+          )}
+        </div>
         <p className="text-xs text-slate-500 mt-0.5">{description}</p>
+        {isFounder && (
+          <p className="text-[11px] text-[#0369a1] mt-1 bg-sky-50/60 p-2 rounded border border-sky-100">
+            <strong>Identity Policy:</strong> Candidates found via search require user confirmation to attach to the report. Homonyms (different companies with same name) must not be confirmed.
+          </p>
+        )}
       </div>
 
       {/* Candidates List if any */}
@@ -314,6 +335,18 @@ const ReviewCategorySection: React.FC<ReviewCategorySectionProps> = ({
         <div className="space-y-2">
           {candidates.map((cand, idx) => {
             const isSelected = selectedUrl === cand.url;
+            const candText = `${cand.title} ${cand.snippet} ${cand.url}`.toLowerCase();
+            const nameMatch = entityName ? candText.includes(entityName.toLowerCase()) : false;
+            const companyMatch = companyName ? candText.includes(companyName.toLowerCase()) : false;
+            const isUserProvided = cand.confidence === 1.0 || cand.title.includes("user-provided");
+            const isWebsiteSourced = cand.title.includes("website") || cand.url.includes("website");
+
+            const sourceBadge = isUserProvided
+              ? "P1: User confirmed"
+              : isWebsiteSourced
+              ? "P2: Website near name"
+              : "P3: Search candidate";
+
             return (
               <div
                 key={idx}
@@ -324,18 +357,52 @@ const ReviewCategorySection: React.FC<ReviewCategorySectionProps> = ({
                     : "bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50"
                 }`}
               >
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
+                <div className="min-w-0 flex-1 space-y-1.5">
+                  <div className="flex flex-wrap items-center gap-1.5">
                     <span className="font-semibold text-slate-800 truncate">{cand.title}</span>
                     <Badge
                       variant={cand.confidence >= 0.7 ? "success" : cand.confidence >= 0.4 ? "warning" : "default"}
+                      className="text-[10px] py-0 px-1.5"
                     >
                       {Math.round(cand.confidence * 100)}% match
                     </Badge>
                   </div>
-                  <p className="text-slate-500 truncate mt-0.5 font-mono text-[11px]">{cand.url}</p>
+
+                  {/* Identity Indicators for founder profiles */}
+                  {isFounder && (
+                    <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                      <Badge
+                        variant={nameMatch ? "success" : "default"}
+                        className="text-[10px] py-0 px-1.5"
+                      >
+                        {nameMatch ? "✓ Name matched" : "Name mismatch"}
+                      </Badge>
+                      <Badge
+                        variant={companyMatch ? "success" : "default"}
+                        className="text-[10px] py-0 px-1.5"
+                      >
+                        {companyMatch ? "✓ Company mentioned" : "Company not verified"}
+                      </Badge>
+                      <Badge
+                        variant="navy"
+                        className="text-[10px] py-0 px-1.5"
+                      >
+                        {sourceBadge}
+                      </Badge>
+                      {!isUserProvided && !isWebsiteSourced && nameMatch && companyMatch && (
+                        <Badge
+                          variant="warning"
+                          className="text-[10px] py-0 px-1.5"
+                        >
+                          Likely match (confirm to attach)
+                        </Badge>
+                      )}
+                    </div>
+                  )}
+
+                  <p className="text-slate-500 truncate font-mono text-[11px]">{cand.url}</p>
                   {cand.snippet && (
-                    <p className="text-slate-600 line-clamp-1 mt-1 text-[11px]">{cand.snippet}</p>
+                    <p className="text-slate-600 line-clamp-1 text-[11px]">{cand.snippet}</p>
                   )}
                 </div>
 

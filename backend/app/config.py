@@ -31,6 +31,7 @@ def normalize_database_url(url: str) -> str:
 class Settings(BaseSettings):
     DATABASE_URL: str = "sqlite+aiosqlite:///./vset.db"
     IMPORT_API_KEY: str = "dev-insecure-test-key-32-chars-long-00000"
+    READ_API_KEY: str | None = None  # None = public read mode (no key required for GET)
     CORS_ORIGINS: list[str] = ["*"]
     ENVIRONMENT: str = "development"
 
@@ -39,6 +40,7 @@ class Settings(BaseSettings):
     SEARCH_PROVIDERS: list[str] = ["searxng", "duckduckgo"]
     SEARXNG_BASE_URL: str | None = None
     LLM_BASE_URL: str = "http://127.0.0.1:11434/v1"
+    # The specific model name used for discovery report assembly (e.g. qwen2.5:7b-instruct)
     LLM_MODEL: str = "qwen2.5:7b-instruct"
     LLM_TIMEOUT_SECONDS: float = 300.0
     LLM_PROFILE: str = "light"
@@ -55,7 +57,7 @@ class Settings(BaseSettings):
     def assemble_db_url(cls, v: Any) -> str:
         if isinstance(v, str):
             return normalize_database_url(v)
-        return v
+        return str(v)
 
     @field_validator("CORS_ORIGINS", "SEARCH_PROVIDERS", "IMAGE_PROXY_ALLOWED_HOSTS", mode="before")
     @classmethod
@@ -98,11 +100,23 @@ class Settings(BaseSettings):
                 "password",
                 "12345678",
                 "dev-insecure",
+                "dev-read-only",
             ]
             if any(p in lower_key for p in insecure_patterns):
                 raise ValueError(
                     "IMPORT_API_KEY cannot be set to a known default or example value in production."
                 )
+
+            read_key = (self.READ_API_KEY or "").strip()
+            if read_key:
+                if len(read_key) < 32:
+                    raise ValueError(
+                        f"READ_API_KEY must be at least 32 characters in production (got {len(read_key)})."
+                    )
+                if any(p in read_key.lower() for p in insecure_patterns):
+                    raise ValueError(
+                        "READ_API_KEY cannot be set to a known default or example value in production."
+                    )
 
             # 2. CORS: reject '*' wildcard in production
             if "*" in self.CORS_ORIGINS:

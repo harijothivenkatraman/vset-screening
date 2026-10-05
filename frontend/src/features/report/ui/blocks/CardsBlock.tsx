@@ -10,11 +10,6 @@ export const CardsBlock: React.FC<CardsBlockProps> = ({ block }) => {
   const [, title, payload] = block;
   const cards = Array.isArray(payload) ? (payload as FounderData[]) : [];
 
-  const gridClass =
-    cards.length <= 2
-      ? "grid-cols-1 md:grid-cols-2"
-      : "grid-cols-1 md:grid-cols-2 lg:grid-cols-3";
-
   return (
     <div className="my-6 space-y-3">
       {title && (
@@ -22,7 +17,7 @@ export const CardsBlock: React.FC<CardsBlockProps> = ({ block }) => {
           {title}
         </h3>
       )}
-      <div className={`grid ${gridClass} gap-4`}>
+      <div className="flex flex-col space-y-4 w-full">
         {cards.map((c, idx) => (
           <FounderCard key={idx} founder={c} />
         ))}

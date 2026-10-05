@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from typing import cast
 
 from app.application.ports.cache_port import CachePort
 from app.application.ports.web_search_port import WebSearchPort
@@ -159,7 +160,7 @@ class ResolveCandidatesService:
         cache_key = f"search:{query}:{max_results}"
         cached = await self._cache.get(cache_key)
         if cached is not None:
-            return cached
+            return cast(list[SearchResult], cached)
         results = await self._web_search.search(query, max_results=max_results)
         await self._cache.set(cache_key, results)
         return results

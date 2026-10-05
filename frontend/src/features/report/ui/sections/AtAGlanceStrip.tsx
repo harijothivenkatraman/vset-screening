@@ -24,6 +24,7 @@ export const AtAGlanceStrip: React.FC<AtAGlanceStripProps> = ({
     let foundingTeamText: string | null = null;
     let leadingInt: string | null = null;
     let otherExecsCount: number | null = null;
+    let founderCount = 0;
 
     for (const b of validBlocks) {
       if (b[0] === "kv" && Array.isArray(b[2])) {
@@ -37,12 +38,23 @@ export const AtAGlanceStrip: React.FC<AtAGlanceStripProps> = ({
           }
         }
       }
+      if (b[0] === "cards" && /founder/i.test(String(b[1] ?? "")) && Array.isArray(b[2])) {
+        founderCount += (b[2] as unknown[]).length;
+      }
+      if (b[0] === "founder_profile") {
+        founderCount += 1;
+      }
       if (b[0] === "table" && Array.isArray(b[3])) {
         const title = String(b[1] ?? "");
         if (/management|executives/i.test(title)) {
           otherExecsCount = (b[3] as unknown[]).length;
         }
       }
+    }
+
+    if (!leadingInt && founderCount > 0) {
+      leadingInt = String(founderCount);
+      foundingTeamText = `${founderCount} member${founderCount === 1 ? "" : "s"}`;
     }
 
     if (!foundingTeamText && otherExecsCount === null) return null;

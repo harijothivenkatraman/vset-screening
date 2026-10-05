@@ -14,6 +14,7 @@ import json
 import sys
 from dataclasses import asdict
 
+from app.domain.entities.discovery import CompanyProfile, PersonProfile
 from app.infrastructure.discovery.scrapers.linkedin_public import LinkedInPublicScraper
 
 
@@ -33,6 +34,7 @@ async def run_smoke_test(url: str) -> None:
         print("Warning: URL does not clearly contain '/company/' or '/in/'. Attempting company scraper first.")
         is_company = True
 
+    profile: CompanyProfile | PersonProfile | None = None
     if is_company:
         print("Scraper Mode: Company Profile")
         profile, diag = await scraper.fetch_company_with_diagnostic(url)

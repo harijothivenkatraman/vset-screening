@@ -62,9 +62,9 @@ class WebsiteFetcherAdapter(PageFetcherPort):
                 if resp.status_code == 200:
                     rp.parse(resp.text.splitlines())
                 else:
-                    rp.allow_all = True
+                    setattr(rp, "allow_all", True)
         except Exception:
-            rp.allow_all = True
+            setattr(rp, "allow_all", True)
 
         self._robots_cache[origin] = rp
         return rp.can_fetch(DEFAULT_USER_AGENT, url)
@@ -256,8 +256,8 @@ def extract_page_content(
     # Extract OG tags
     og_tags: dict[str, str] = {}
     for tag in soup.find_all("meta"):
-        p = tag.get("property") or tag.get("name") or ""
-        c = tag.get("content") or ""
+        p = str(tag.get("property") or tag.get("name") or "")
+        c = str(tag.get("content") or "")
         if p and c and (p.startswith("og:") or p.startswith("twitter:")):
             og_tags[p.lower()] = c.strip()
 
@@ -303,7 +303,8 @@ def extract_page_content(
                         social_links["twitter"] = sa_str
 
     for a in soup.find_all("a", href=True):
-        href = a.get("href", "").strip()
+        raw_href = a.get("href")
+        href = str(raw_href).strip() if raw_href is not None else ""
         if not href or href.startswith(("#", "javascript:", "mailto:", "tel:")):
             continue
         full_url = urllib.parse.urljoin(url, href)
@@ -341,11 +342,11 @@ def extract_page_content(
         r"(?:^|[-_ ])(chat|intercom|drift|hubspot|crisp|tidio|zendesk|livechat|tawk|cookie|consent|gdpr|modal|popup|toast|w-form-fail|w-form-done)(?:[-_ ]|$)",
         re.I,
     )
-    for el in soup.find_all(attrs={"class": widget_selector}):
+    for el in soup.find_all(name=None, attrs={"class": widget_selector}):
         el.decompose()
-    for el in soup.find_all(attrs={"id": widget_selector}):
+    for el in soup.find_all(name=None, attrs={"id": widget_selector}):
         el.decompose()
-    for el in soup.find_all(attrs={"role": re.compile(r"^(dialog|alertdialog)$", re.I)}):
+    for el in soup.find_all(name=None, attrs={"role": re.compile(r"^(dialog|alertdialog)$", re.I)}):
         el.decompose()
 
     # Extract readable text and strip individual boilerplate lines

@@ -4,12 +4,14 @@ from __future__ import annotations
 import logging
 import urllib.parse
 from typing import AsyncGenerator
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 import httpx
 
 from app.config import get_settings
 from app.infrastructure.discovery.http.ssrf_guard import validate_safe_url
+
+from app.presentation.guards.api_key_guard import verify_read_or_admin_key
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +21,7 @@ settings = get_settings()
 MAX_IMAGE_BYTES = 2 * 1024 * 1024  # 2MB max
 
 
-@router.get("/image-proxy")
+@router.get("/image-proxy", dependencies=[Depends(verify_read_or_admin_key)])
 async def proxy_image(url: str = Query(..., description="Target image URL to proxy")) -> StreamingResponse:
     """Safely stream external profile and company images through backend cache.
 

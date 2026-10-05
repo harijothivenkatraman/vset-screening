@@ -65,7 +65,40 @@ describe("DiscoveryForm", () => {
       founder_names: ["Alice Vance"],
       website_override: undefined,
       company_linkedin_override: undefined,
+    }, false);
+  });
+
+  it("submits with reviewBeforeStart when advanced checkbox is checked", () => {
+    const handleSubmit = vi.fn();
+    render(<DiscoveryForm isLoading={false} onSubmit={handleSubmit} />);
+
+    fireEvent.change(screen.getByPlaceholderText("e.g. Terraspark Robotics"), {
+      target: { value: "Acme" },
     });
+    fireEvent.change(screen.getByPlaceholderText("Founder #1 Name"), {
+      target: { value: "Alice" },
+    });
+
+    fireEvent.click(screen.getByLabelText(/Review sources before starting/));
+    fireEvent.click(screen.getByRole("button", { name: /Find Public Footprint/ }));
+
+    expect(handleSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ company_name: "Acme" }),
+      true
+    );
+  });
+
+  it("initializes with initialValues", () => {
+    render(
+      <DiscoveryForm
+        isLoading={false}
+        onSubmit={vi.fn()}
+        initialValues={{ company_name: "Test Co", founder_names: ["Bob", "Alice"] }}
+      />
+    );
+    expect(screen.getByDisplayValue("Test Co")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("Bob")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("Alice")).toBeInTheDocument();
   });
 });
 

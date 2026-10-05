@@ -1,10 +1,18 @@
-{$DOMAIN} {
+# ------------------------------------------------------------------------------
+# DOMAIN SETUP & HTTPS CONFIGURATION
+# ------------------------------------------------------------------------------
+# By default, Caddy serves over HTTP on port 80, which is suitable for IP-only
+# access (e.g., direct access to a VPS IP without a domain name).
+#
+# TO ENABLE AUTOMATIC HTTPS:
+# 1. Point your domain (e.g., example.com) to your server's IP address.
+# 2. Replace `:80` below with your domain name (e.g., `example.com`).
+# 3. Caddy will automatically provision and renew Let's Encrypt certificates!
+# ------------------------------------------------------------------------------
+{$DOMAIN::80} {
 	encode zstd gzip
 
-	# Basic Auth (injected via entrypoint if configured)
-	import /etc/caddy/auth.caddy
-
-	# Security headers
+	# Security headers (applied to all responses)
 	header {
 		X-Content-Type-Options "nosniff"
 		X-Frame-Options "DENY"
@@ -13,26 +21,47 @@
 		-Server
 	}
 
-	# Proxy API and health requests to internal backend service
-	handle /api/* {
-		reverse_proxy backend:8000
-	}
-
+	# Health endpoint: open for monitoring (no auth, no CORS)
 	handle /health {
 		reverse_proxy backend:8000
 	}
 
-	# Serve static files for SPA
+	# All other routes: protected by HTTP Basic Auth (if configured)
 	handle {
-		root * /srv
+		import /etc/caddy/auth.caddy
 
-		@assets path /assets/*
-		header @assets Cache-Control "public, max-age=31536000, immutable"
+		# CORS headers for authenticated routes
+		header {
+			Access-Control-Allow-Origin "{header.Origin}"
+			Access-Control-Allow-Methods "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+			Access-Control-Allow-Headers "Content-Type, Authorization, X-Requested-With, X-Api-Key"
+			Access-Control-Allow-Credentials "true"
+		}
 
-		@notAssets not path /assets/*
-		header @notAssets Cache-Control "no-cache, no-store, must-revalidate"
+		# Handle preflight requests
+		@options {
+			method OPTIONS
+		}
+		respond @options 204
 
-		try_files {path} /index.html
-		file_server
+		# Proxy API requests to backend
+		handle /api/* {
+			reverse_proxy backend:8000
+		}
+
+		# Serve static files for SPA
+		handle {
+			root * /srv
+
+			@assets path /assets/*
+			header @assets Cache-Control "public, max-age=31536000, immutable"
+
+			@notAssets not path /assets/*
+			header @notAssets Cache-Control "no-cache, no-store, must-revalidate"
+
+			try_files {path} /index.html
+			file_server
+		}
 	}
 }
+

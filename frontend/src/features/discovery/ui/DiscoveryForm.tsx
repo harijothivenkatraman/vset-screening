@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Plus, Trash2, Search, Globe, Building2, User } from "lucide-react";
 import { Button } from "@/shared/ui/Button";
 import { Card } from "@/shared/ui/Card";
@@ -7,7 +7,7 @@ import { ResolveCandidatesRequest } from "../types";
 interface DiscoveryFormProps {
   initialValues?: Partial<ResolveCandidatesRequest>;
   isLoading: boolean;
-  onSubmit: (values: ResolveCandidatesRequest) => void;
+  onSubmit: (values: ResolveCandidatesRequest, reviewBeforeStart: boolean) => void;
 }
 
 export const DiscoveryForm: React.FC<DiscoveryFormProps> = ({
@@ -25,7 +25,17 @@ export const DiscoveryForm: React.FC<DiscoveryFormProps> = ({
   const [companyLinkedinOverride, setCompanyLinkedinOverride] = useState(
     initialValues?.company_linkedin_override || ""
   );
+  const [reviewBeforeStart, setReviewBeforeStart] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (initialValues) {
+      setCompanyName(initialValues.company_name || "");
+      setFounders(initialValues.founder_names?.length ? initialValues.founder_names : [""]);
+      setWebsiteOverride(initialValues.website_override || "");
+      setCompanyLinkedinOverride(initialValues.company_linkedin_override || "");
+    }
+  }, [initialValues]);
 
   const handleAddFounder = () => {
     setFounders([...founders, ""]);
@@ -63,7 +73,7 @@ export const DiscoveryForm: React.FC<DiscoveryFormProps> = ({
       founder_names: validFounders,
       website_override: websiteOverride.trim() || undefined,
       company_linkedin_override: companyLinkedinOverride.trim() || undefined,
-    });
+    }, reviewBeforeStart);
   };
 
   return (
@@ -197,7 +207,16 @@ export const DiscoveryForm: React.FC<DiscoveryFormProps> = ({
         </div>
 
         {/* Submit */}
-        <div className="pt-2 flex justify-end">
+        <div className="pt-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={reviewBeforeStart}
+              onChange={(e) => setReviewBeforeStart(e.target.checked)}
+              className="rounded border-slate-300 text-[#1e2a3a] focus:ring-[#1e2a3a]"
+            />
+            Review sources before starting (Advanced)
+          </label>
           <Button type="submit" disabled={isLoading} size="lg" className="w-full sm:w-auto">
             {isLoading ? (
               <span className="flex items-center gap-2">

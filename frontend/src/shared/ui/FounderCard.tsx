@@ -19,6 +19,10 @@ export const FounderCard: React.FC<FounderCardProps> = ({
   founder,
   className = "",
 }) => {
+  const isUncorroboratedFit =
+    !founder.fit ||
+    /could not be (retrieved|corroborated)|not identified|unverified/i.test(founder.fit);
+
   return (
     <div
       className={`bg-white rounded-lg border border-slate-200 p-5 shadow-xs hover:border-slate-300 transition-colors flex flex-col justify-between ${className}`}
@@ -55,7 +59,7 @@ export const FounderCard: React.FC<FounderCardProps> = ({
       </div>
 
       {/* Founder-Market Fit Panel */}
-      {founder.fit && (
+      {!isUncorroboratedFit && founder.fit && (
         <div className="mt-2 pt-3 border-t border-slate-100 bg-[#f8fafc] p-3.5 rounded-md border-l-3 border-l-[#0369a1]">
           <div className="flex items-center gap-1.5 mb-1 text-[#0369a1]">
             <Lightbulb className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />

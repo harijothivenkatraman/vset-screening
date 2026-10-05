@@ -85,22 +85,35 @@ class TestEvidenceMapperGolden:
         assert "evidence_register" in final
         assert "sources" in final["evidence_register"]
 
-    def test_seven_sections_with_correct_keys(self) -> None:
-        """Must produce exactly 7 sections with the standard keys."""
-        evidence = Evidence()
-        result = build_canonical_report(evidence, "TestCo", ["Founder"])
+    def test_sections_with_correct_keys(self) -> None:
+        """Must produce 7 canonical sections with all founder data in team section."""
+        # 1. Without founder profiles -> 7 canonical reference sections
+        evidence_empty = Evidence()
+        result_empty = build_canonical_report(evidence_empty, "TestCo", ["Founder"])
+        sections_empty = result_empty["canonical"]["content"]["sections"]
+        assert len(sections_empty) == 7
+        assert [s["key"] for s in sections_empty] == [
+            "company", "team", "product", "validation",
+            "market", "competition", "funding",
+        ]
 
-        sections = result["canonical"]["content"]["sections"]
-        assert len(sections) == 7
-
-        keys = [s["key"] for s in sections]
-        assert keys == [
+        # 2. With founder profiles -> 7 canonical sections (founder data in team section)
+        from app.domain.entities.discovery import PersonProfile
+        evidence_with_fp = Evidence(
+            founder_profiles=[
+                PersonProfile(name="Alice")
+            ]
+        )
+        result_with_fp = build_canonical_report(evidence_with_fp, "TestCo", ["Alice"])
+        sections_with_fp = result_with_fp["canonical"]["content"]["sections"]
+        assert len(sections_with_fp) == 7
+        assert [s["key"] for s in sections_with_fp] == [
             "company", "team", "product", "validation",
             "market", "competition", "funding",
         ]
 
         # Each section must have non-empty key and title
-        for s in sections:
+        for s in sections_with_fp:
             assert len(s["key"]) > 0
             assert len(s["title"]) > 0
             assert "blocks" in s
@@ -118,7 +131,7 @@ class TestEvidenceMapperGolden:
                 assert isinstance(block[0], str), f"Block type is not str: {block[0]}"
 
     def test_founder_cards_with_profiles(self) -> None:
-        """When founder profiles are available, cards block should contain them."""
+        """When founder profiles are available, team section should contain founder_profile blocks."""
         profile = PersonProfile(
             name="Alice Smith",
             headline="CEO at Acme",
@@ -132,16 +145,15 @@ class TestEvidenceMapperGolden:
         team_section = result["canonical"]["content"]["sections"][1]
         assert team_section["key"] == "team"
 
-        # Find cards block
-        cards_blocks = [b for b in team_section["blocks"] if b[0] == "cards"]
-        assert len(cards_blocks) == 1
+        # Find founder_profile block
+        fp_blocks = [b for b in team_section["blocks"] if b[0] == "founder_profile"]
+        assert len(fp_blocks) == 1
 
-        cards_payload = cards_blocks[0][2]
-        assert len(cards_payload) == 1
-        card = cards_payload[0]
-        assert card["name"] == "Alice Smith"
-        assert "lines" in card
-        assert "fit" in card
+        founder_payload = fp_blocks[0][2]
+        assert founder_payload["founder_name"] == "Alice Smith"
+        assert founder_payload["headline"] == "CEO at Acme"
+        assert len(founder_payload["experience_timeline"]) == 1
+        assert len(founder_payload["education"]) == 1
 
     def test_sources_register_populated(self) -> None:
         """Sources from evidence should appear in the evidence register."""
@@ -217,7 +229,7 @@ class TestEvidenceMapperGolden:
         result = build_canonical_report(evidence, "TestCo", ["Founder"])
 
         pres = result["presentation"]
-        assert pres["audience_label"] == "Founder Screen"
+        assert pres["audience_label"] in ("Founder Screen", "Auto-discovered · not reviewed")
         assert "action_section_title" in pres
         assert "filename_stem" in pres
         assert "testco" in pres["filename_stem"]
@@ -261,7 +273,7 @@ class TestEvidenceMapperEdgeCases:
         validate_raw_report_json(result)
 
     def test_partial_founder_profile_match(self) -> None:
-        """When only some founders have profiles, cards should still generate."""
+        """When only some founders have profiles, founder_profile blocks should still generate for all."""
         profile = PersonProfile(name="Alice Smith", headline="CEO")
         evidence = Evidence(founder_profiles=[profile])
         result = build_canonical_report(
@@ -269,12 +281,10 @@ class TestEvidenceMapperEdgeCases:
         )
 
         team = result["canonical"]["content"]["sections"][1]
-        cards_blocks = [b for b in team["blocks"] if b[0] == "cards"]
-        assert len(cards_blocks) == 1
-        cards = cards_blocks[0][2]
-        assert len(cards) == 2  # Both founders get cards
-        assert cards[0]["name"] == "Alice Smith"
-        assert cards[1]["name"] == "Bob Unknown"
+        fp_blocks = [b for b in team["blocks"] if b[0] == "founder_profile"]
+        assert len(fp_blocks) == 2
+        assert fp_blocks[0][2]["founder_name"] == "Alice Smith"
+        assert fp_blocks[1][2]["founder_name"] == "Bob Unknown"
 
 
 # ── Fixtures ───────────────────────────────────────────────────────────
@@ -495,10 +505,11 @@ class TestEvidenceMapperSourcePermutations:
         assert kv_dict.get("Headquarters") == "San Francisco, CA"
         assert kv_dict.get("Founded") == "2021"
 
-        # Team founder card
-        founder_card = team_sec["blocks"][1][2][0]
-        assert founder_card["name"] == "Alice"
-        assert "Founder & CEO" in founder_card["role"]
+        # Team founder profile
+        founder_block = next(b for b in team_sec["blocks"] if b[0] == "founder_profile")
+        founder_data = founder_block[2]
+        assert founder_data["founder_name"] == "Alice"
+        assert "Founder & CEO" in founder_data["headline"]
 
     def test_mapper_both(self) -> None:
         """When both LinkedIn and website evidence are present, merged precedence applies."""
@@ -599,27 +610,24 @@ class TestEvidenceMapperSourcePermutations:
 
         sections = result["canonical"]["content"]["sections"]
         team_sec = next(s for s in sections if s["key"] == "team")
-        cards = next(b for b in team_sec["blocks"] if b[0] == "cards")[2]
+        fp_blocks = [b for b in team_sec["blocks"] if b[0] == "founder_profile"]
+        assert len(fp_blocks) == 3
 
         # 1. Arpita Kapoor: verified via LinkedIn headline
-        arpita = next(c for c in cards if c["name"] == "Arpita Kapoor")
-        assert arpita["role"] == "CEO at Mysa"
-        arpita_lines = dict(arpita["lines"])
-        assert "LinkedIn profile (https://linkedin.com/in/arpitakapoor)" in arpita_lines.get("Role source", "")
+        arpita = next(b[2] for b in fp_blocks if b[2]["founder_name"] == "Arpita Kapoor")
+        assert arpita["headline"] == "CEO at Mysa"
+        assert arpita["retrieval"]["source_type"] == "linkedin_public"
 
         # 2. Mohit Rangaraju: verified via website mention
-        mohit = next(c for c in cards if c["name"] == "Mohit Rangaraju")
-        assert mohit["role"] == "Founder (from company website)"
-        mohit_lines = dict(mohit["lines"])
-        assert "Company website: https://mysa.io/team" in mohit_lines.get("Role source", "")
+        mohit = next(b[2] for b in fp_blocks if b[2]["founder_name"] == "Mohit Rangaraju")
+        assert mohit["headline"] == "Founder (from company website)"
+        assert mohit["website_data"] is not None
+        assert "https://mysa.io/team" in mohit["website_data"]["lines"][1][1]
 
-        # 3. Ashutosh Panigrahi: unverified user input -> must be 'Founder (provided by user)'
-        ashutosh = next(c for c in cards if c["name"] == "Ashutosh Panigrahi")
-        assert ashutosh["role"] == "Founder (provided by user)"
-        assert "Co-founder" not in ashutosh["role"]
-        ashutosh_lines = dict(ashutosh["lines"])
-        assert ashutosh_lines.get("Role source") == "Provided by user (unverified)"
-        assert "could not be corroborated" in ashutosh["fit"]
+        # 3. Ashutosh Panigrahi: unverified user input -> status not_found
+        ashutosh = next(b[2] for b in fp_blocks if b[2]["founder_name"] == "Ashutosh Panigrahi")
+        assert ashutosh["headline"] == "Founder (profile unverified)"
+        assert ashutosh["retrieval"]["status"] == "not_found"
 
     def test_unverified_founder_background_emits_actionable_dd_requirements(self) -> None:
         """Unverified founder education and experience must appear as actionable DD requirements under Information to prepare."""

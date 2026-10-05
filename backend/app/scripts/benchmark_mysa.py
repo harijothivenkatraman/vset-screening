@@ -59,7 +59,7 @@ def load_golden_reference(path: Path) -> dict[str, Any]:
 
     sections = data.get("canonical", {}).get("content", {}).get("sections", [])
 
-    def get_sec(title: str) -> dict:
+    def get_sec(title: str) -> dict[str, Any]:
         return next((s for s in sections if s.get("title") == title), {})
 
     sec0 = get_sec("Key facts & context")
@@ -104,10 +104,10 @@ def load_golden_reference(path: Path) -> dict[str, Any]:
 
 class CapturingReportImportAdapter(ReportImportPort):
     def __init__(self) -> None:
-        self.imported_reports: dict[str, dict] = {}
+        self.imported_reports: dict[str, dict[str, Any]] = {}
 
-    async def import_report(self, report_json: dict) -> ImportResult:
-        slug = report_json["canonical"]["meta"]["report_id"]
+    async def import_report(self, report_json: dict[str, Any]) -> ImportResult:
+        slug = str(report_json["canonical"]["meta"]["report_id"])
         self.imported_reports[slug] = report_json
         return ImportResult(status="created", company_slug=slug, message="Imported")
 
@@ -186,14 +186,19 @@ class LoggingLlmAdapter(LlmPort):
         return await self._inner.is_available()
 
     async def check_availability(self) -> dict[str, bool]:
-        return await self._inner.check_availability()
+        if hasattr(self._inner, "check_availability"):
+            res = await self._inner.check_availability()
+            if isinstance(res, dict):
+                return {str(k): bool(v) for k, v in res.items()}
+        avail = await self.is_available()
+        return {"server_reachable": avail, "model_available": avail}
 
 
 async def run_mysa_pipeline(
     enable_llm: bool = False,
     simulate_blocked: bool = True,
     model_name: str = "qwen2.5:0.5b",
-) -> tuple[DiscoveryJob, dict | None, list[dict[str, Any]]]:
+) -> tuple[DiscoveryJob, dict[str, Any] | None, list[dict[str, Any]]]:
     job_id = f"job-bench-{uuid.uuid4().hex[:8]}"
     now = datetime.now(timezone.utc)
     job = DiscoveryJob(
@@ -215,6 +220,7 @@ async def run_mysa_pipeline(
     await job_store.create(job)
 
     rate_limiter = HostRateLimiter(min_interval_seconds=1.0)
+    profile_scraper: ProfileScraperPort
     if simulate_blocked:
         profile_scraper = SimulatedBlockedLinkedInScraper()
     else:
@@ -246,15 +252,17 @@ async def run_mysa_pipeline(
 
     await service.execute(job)
     final_job = await job_store.get(job_id)
+    if final_job is None:
+        final_job = job
     report = report_importer.imported_reports.get(final_job.result_slug) if final_job.result_slug else None
     return final_job, report, llm_logger.call_log if llm_logger else []
 
 
-def evaluate_report(report: dict, golden: dict[str, Any]) -> dict[str, dict]:
+def evaluate_report(report: dict[str, Any], golden: dict[str, Any]) -> dict[str, dict[str, Any]]:
     """Extract and compare the 9 target benchmark fields against the programmatically loaded golden reference."""
-    sections = report.get("canonical", {}).get("content", {}).get("sections", [])
+    sections: list[dict[str, Any]] = report.get("canonical", {}).get("content", {}).get("sections", [])
 
-    def get_section(key: str) -> dict:
+    def get_section(key: str) -> dict[str, Any]:
         return next((s for s in sections if s.get("key") == key), {})
 
     company_sec = get_section("company")
@@ -262,7 +270,7 @@ def evaluate_report(report: dict, golden: dict[str, Any]) -> dict[str, dict]:
     product_sec = get_section("product")
     finance_sec = get_section("funding") or get_section("financials")
 
-    company_kv = {}
+    company_kv: dict[str, str] = {}
     for b in company_sec.get("blocks", []):
         if b[0] == "kv" and b[1] == "Company profile":
             company_kv = dict(b[2])
@@ -290,7 +298,7 @@ def evaluate_report(report: dict, golden: dict[str, Any]) -> dict[str, dict]:
         if b[0] == "para" and b[1] in ("Financing position", "Funding overview"):
             finance_text = str(b[2])
 
-    results: dict[str, dict] = {}
+    results: dict[str, dict[str, Any]] = {}
 
     # Field 1: Sector
     gen_sector = company_kv.get("Sector", "")
@@ -408,9 +416,9 @@ def evaluate_report(report: dict, golden: dict[str, Any]) -> dict[str, dict]:
     return results
 
 
-def evaluate_section_coverage(report: dict) -> list[dict[str, Any]]:
+def evaluate_section_coverage(report: dict[str, Any]) -> list[dict[str, Any]]:
     """Evaluate coverage across all 7 canonical sections of the report."""
-    sections = report.get("canonical", {}).get("content", {}).get("sections", [])
+    sections: list[dict[str, Any]] = report.get("canonical", {}).get("content", {}).get("sections", [])
     coverage_rows = []
     for s in sections:
         key = s.get("key", "")
@@ -457,9 +465,9 @@ def print_section_coverage_table(coverage: list[dict[str, Any]]) -> None:
     print("-" * 95)
 
 
-def print_funding_facts_table(report: dict) -> None:
-    sections = report.get("canonical", {}).get("content", {}).get("sections", [])
-    funding_sec = next((s for s in sections if s.get("key") == "funding"), {})
+def print_funding_facts_table(report: dict[str, Any]) -> None:
+    sections: list[dict[str, Any]] = report.get("canonical", {}).get("content", {}).get("sections", [])
+    funding_sec: dict[str, Any] = next((s for s in sections if s.get("key") == "funding"), {})
     print(f"\n{'='*95}")
     print("FUNDING FACTS & CITATIONS BREAKDOWN (Section 7)")
     print(f"{'='*95}")
@@ -486,7 +494,7 @@ def print_funding_facts_table(report: dict) -> None:
                 print(f"  [{b[1]}]: {b[2]}")
 
 
-def print_benchmark_table(mode_title: str, results: dict[str, dict], job: DiscoveryJob) -> None:
+def print_benchmark_table(mode_title: str, results: dict[str, dict[str, Any]], job: DiscoveryJob) -> None:
     print(f"\n{'='*95}")
     print(f"BENCHMARK RESULTS: {mode_title}")
     print(f"Job Status: {job.state.value.upper()} | Warnings: {len(job.warnings)} | Diagnostics: {len(job.diagnostics)}")

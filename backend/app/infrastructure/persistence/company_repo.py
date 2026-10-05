@@ -65,3 +65,13 @@ class SqlAlchemyCompanyRepository(CompanyRepository):
             model.updated_at = company.updated_at
         await self._session.flush()
         return _model_to_entity(model)
+
+    async def delete_by_slug(self, slug: str) -> bool:
+        stmt = select(CompanyModel).where(CompanyModel.slug == slug)
+        result = await self._session.execute(stmt)
+        model = result.scalar_one_or_none()
+        if model is None:
+            return False
+        await self._session.delete(model)
+        await self._session.commit()
+        return True

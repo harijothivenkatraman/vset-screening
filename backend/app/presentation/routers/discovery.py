@@ -33,7 +33,7 @@ from app.presentation.dependencies import (
     get_resolve_candidates_service,
     get_start_discovery_job_service,
 )
-from app.presentation.guards.api_key_guard import verify_api_key
+from app.presentation.guards.api_key_guard import verify_admin_key
 from app.presentation.schemas.discovery import (
     CandidateItemSchema,
     DiscoveryHealthResponse,
@@ -77,7 +77,7 @@ async def _run_job_in_background(
 @router.post(
     "/resolve",
     response_model=ResolveCandidatesResponse,
-    dependencies=[Depends(verify_api_key)],
+    dependencies=[Depends(verify_admin_key)],
     summary="Search and resolve candidate profile/website URLs",
 )
 async def resolve_candidates(
@@ -129,7 +129,7 @@ async def resolve_candidates(
     "/jobs",
     response_model=StartDiscoveryJobResponse,
     status_code=status.HTTP_202_ACCEPTED,
-    dependencies=[Depends(verify_api_key)],
+    dependencies=[Depends(verify_admin_key)],
     summary="Start background screening discovery job",
 )
 async def start_discovery_job(
@@ -159,18 +159,34 @@ async def start_discovery_job(
             detail=f"Rate limit exceeded: maximum {settings.DISCOVERY_RATE_LIMIT_PER_HOUR} discovery jobs per hour.",
         )
 
+    # 2b. Concurrency guard: one job at a time across the system
+    active_jobs = [j for j in recent_jobs if str(getattr(j, "state", "")).lower() in ("queued", "running")]
+    if active_jobs:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"A discovery job ({active_jobs[0].id}) is currently in progress for '{active_jobs[0].company_name}'. Only one discovery job at a time is permitted.",
+        )
+
+    # 2c. Cooldown guard: prevent rapid repeat refresh on the same company (60s cooldown)
+    company_norm = request.company_name.strip().lower()
+    now_utc = datetime.now(timezone.utc)
+    for j in recent_jobs:
+        if j.company_name.strip().lower() == company_norm and (now_utc - j.created_at) < timedelta(seconds=60):
+            remaining = int(60 - (now_utc - j.created_at).total_seconds())
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=f"Refresh cooldown active for '{request.company_name}'. Please wait {max(1, remaining)} seconds before refreshing again.",
+            )
+
+
     # 2b. Verify LLM model availability on inference server
-    if settings.DISCOVERY_ENABLED and not request.skip_llm_validation:
+    llm_warning: str | None = None
+    if settings.DISCOVERY_ENABLED:
         try:
             if hasattr(llm, "check_availability"):
                 avail = await llm.check_availability()
                 if not avail.get("model_available", False):
-                    raise HTTPException(
-                        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                        detail=f"LLM model '{settings.LLM_MODEL}' is not available on the inference server. Build report is disabled until the model is loaded.",
-                    )
-        except HTTPException:
-            raise
+                    llm_warning = "LLM model not available; assembled with rules-only extraction"
         except Exception as exc:
             logger.warning("LLM availability check failed during job submission: %s", exc)
 
@@ -183,8 +199,14 @@ async def start_discovery_job(
                 confirmed_urls=request.confirmed_urls,
                 search_snippets=request.search_snippets,
                 manual_evidence={k: v.model_dump() for k, v in request.manual_evidence.items()},
+                llm_model=request.llm_model,
             )
         )
+        if llm_warning:
+            job = await job_store.get(res.job_id)
+            if job:
+                job.add_warning(llm_warning)
+                await job_store.update(job)
     except DiscoveryDisabledError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=exc.message) from exc
     except ValueError as exc:
@@ -203,7 +225,7 @@ async def start_discovery_job(
 @router.get(
     "/jobs/{job_id}",
     response_model=DiscoveryJobStatusResponse,
-    dependencies=[Depends(verify_api_key)],
+    dependencies=[Depends(verify_admin_key)],
     summary="Poll discovery job status",
 )
 async def get_job_status(
@@ -251,6 +273,7 @@ async def discovery_health(
     """Public probe to check readiness of discovery components and LLM server."""
     is_llm_ok = False
     is_model_ok = False
+    installed_models: list[str] = []
     try:
         if hasattr(llm, "check_availability"):
             avail = await llm.check_availability()
@@ -259,9 +282,16 @@ async def discovery_health(
         else:
             is_llm_ok = await llm.is_available()
             is_model_ok = is_llm_ok
+            
+        import httpx
+        base = settings.LLM_BASE_URL.replace("/v1", "").rstrip("/")
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            resp = await client.get(f"{base}/api/tags")
+            if resp.status_code == 200:
+                data = resp.json()
+                installed_models = [str(m["name"]) for m in data.get("models", []) if isinstance(m, dict) and "name" in m]
     except Exception:
-        is_llm_ok = False
-        is_model_ok = False
+        pass
 
     free_gb = _get_free_disk_gb()
 
@@ -273,6 +303,7 @@ async def discovery_health(
         llm_reachable=is_llm_ok,
         model_available=is_model_ok,
         llm_model=settings.LLM_MODEL,
+        installed_models=installed_models,
         search_providers=settings.SEARCH_PROVIDERS,
         free_disk_gb=round(free_gb, 2),
     )

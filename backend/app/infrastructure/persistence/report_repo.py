@@ -34,6 +34,38 @@ def _model_to_entity(model: ReportModel) -> Report:
     )
 
 
+import re
+
+def sanitize_audit_snapshot(obj: Any) -> Any:
+    """Recursively scrub raw profile text, contact info (emails, phones), and photo URLs from audit snapshots."""
+    email_re = re.compile(r"\b[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+\b")
+    phone_re = re.compile(
+        r"(?<![\w$€£₹])\+\d{1,4}[-.\s]?(?:\(?\d{1,4}\)?[-.\s]?)?\d{3,5}[-.\s]?\d{3,5}(?:[-.\s]?\d{1,4})?(?![\w])"
+        r"|(?<![\w$€£₹])\(\d{2,4}\)[-.\s]?\d{3,4}[-.\s]?\d{3,5}(?![\w])"
+        r"|(?<![\w$€£₹])0[6-9]\d{4}[-.\s]?\d{5}(?![\w])"
+        r"|(?<![\w$€£₹])0[6-9]\d{9}(?![\w])"
+        r"|(?<![\w$€£₹])\b[6-9]\d{4}[-.\s]\d{5}(?![\w])"
+        r"|(?<![\w$€£₹])\b[6-9]\d{9}\b(?![\w])"
+        r"|(?<![\w$€£₹])(?!(?:19|20)\d{2}[-.\/](?:0?[1-9]|1[0-2]))\b\d{3}[-.]\d{3}[-.]\d{4}(?![\w])"
+    )
+
+    if isinstance(obj, dict):
+        cleaned = {}
+        for k, v in obj.items():
+            k_lower = str(k).lower()
+            if k_lower in ("email", "phone", "mobile", "contact", "contact_info", "avatar_url", "photo_url", "raw_profile_text", "raw_text", "pdf_base64"):
+                continue
+            cleaned[k] = sanitize_audit_snapshot(v)
+        return cleaned
+    elif isinstance(obj, list):
+        return [sanitize_audit_snapshot(item) for item in obj]
+    elif isinstance(obj, str):
+        s = email_re.sub("", obj)
+        s = phone_re.sub("", s)
+        return s.strip()
+    return obj
+
+
 class SqlAlchemyReportRepository(ReportRepository):
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
@@ -106,6 +138,7 @@ class SqlAlchemyReportRepository(ReportRepository):
         return _model_to_entity(model)
 
     async def save_raw_snapshot(self, report_id: UUID, raw_json: dict[str, Any], content_fingerprint: str) -> None:
+        clean_snapshot = sanitize_audit_snapshot(raw_json)
         stmt = select(RawSnapshotModel).where(RawSnapshotModel.report_id == report_id)
         result = await self._session.execute(stmt)
         model = result.scalar_one_or_none()
@@ -113,12 +146,12 @@ class SqlAlchemyReportRepository(ReportRepository):
             model = RawSnapshotModel(
                 id=uuid4(),
                 report_id=report_id,
-                raw_json=raw_json,
+                raw_json=clean_snapshot,
                 content_fingerprint=content_fingerprint,
             )
             self._session.add(model)
         else:
-            model.raw_json = raw_json
+            model.raw_json = clean_snapshot
             model.content_fingerprint = content_fingerprint
         await self._session.flush()
 

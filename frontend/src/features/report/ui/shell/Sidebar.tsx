@@ -57,7 +57,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ slug, isOpen, onClose }) => {
         )}
 
         {/* Dynamic section tabs 1-7 */}
-        {sections?.map((sec, idx) => (
+        {sections?.filter(sec => sec.key !== "founder_profiles").map((sec, idx) => (
           <NavLink
             key={sec.key}
             to={`/companies/${slug}/${sec.key}`}

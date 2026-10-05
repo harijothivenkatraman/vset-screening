@@ -9,27 +9,32 @@ import {
 } from "./types";
 
 export async function resolveCandidates(
-  request: ResolveCandidatesRequest
+  request: ResolveCandidatesRequest,
+  apiKey?: string
 ): Promise<ResolveCandidatesResponse> {
   return apiClient<ResolveCandidatesResponse>("/discovery/resolve", {
     method: "POST",
     body: JSON.stringify(request),
+    apiKey,
   });
 }
 
 export async function startDiscoveryJob(
-  request: StartDiscoveryJobRequest
+  request: StartDiscoveryJobRequest,
+  apiKey?: string
 ): Promise<StartDiscoveryJobResponse> {
   return apiClient<StartDiscoveryJobResponse>("/discovery/jobs", {
     method: "POST",
     body: JSON.stringify(request),
+    apiKey,
   });
 }
 
 export async function getDiscoveryJobStatus(
-  jobId: string
+  jobId: string,
+  apiKey?: string
 ): Promise<DiscoveryJobStatus> {
-  return apiClient<DiscoveryJobStatus>(`/discovery/jobs/${jobId}`);
+  return apiClient<DiscoveryJobStatus>(`/discovery/jobs/${jobId}`, { apiKey });
 }
 
 export async function getDiscoveryHealth(): Promise<DiscoveryHealth> {

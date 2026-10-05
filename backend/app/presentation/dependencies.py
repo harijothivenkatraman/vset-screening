@@ -6,6 +6,7 @@ from app.application.ports.company_repository import CompanyRepository
 from app.application.ports.report_repository import ReportRepository
 from app.application.ports.section_repository import SectionRepository
 from app.application.ports.source_repository import SourceRepository
+from app.application.services.delete_company import DeleteCompanyService
 from app.application.services.get_actions import GetActionsService
 from app.application.services.get_report_header import GetReportHeaderService
 from app.application.services.get_section import GetSectionService
@@ -46,6 +47,12 @@ def get_list_companies_service(
     report_repo: ReportRepository = Depends(get_report_repository),
 ) -> ListCompaniesService:
     return ListCompaniesService(company_repo, report_repo)
+
+
+def get_delete_company_service(
+    company_repo: CompanyRepository = Depends(get_company_repository),
+) -> DeleteCompanyService:
+    return DeleteCompanyService(company_repo)
 
 
 def get_report_header_service(

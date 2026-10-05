@@ -4,6 +4,7 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from typing import Any
 
 from app.application.ports.job_store_port import JobStorePort
 from app.domain.entities.discovery import DiscoveryJob, JobState
@@ -17,6 +18,7 @@ class StartJobInput:
     confirmed_urls: dict[str, str]  # category -> confirmed URL
     search_snippets: dict[str, str] = field(default_factory=dict)
     manual_evidence: dict[str, Any] = field(default_factory=dict)
+    llm_model: str | None = None
 
 
 @dataclass(frozen=True)
@@ -66,6 +68,7 @@ class StartDiscoveryJobService:
             confirmed_urls=input_dto.confirmed_urls,
             search_snippets=input_dto.search_snippets,
             manual_evidence=input_dto.manual_evidence,
+            llm_model=input_dto.llm_model,
         )
         
         await self._job_store.create(job)

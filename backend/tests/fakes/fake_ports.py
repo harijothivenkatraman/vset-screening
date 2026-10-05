@@ -1,14 +1,16 @@
 """Fake implementations of discovery ports for testing."""
 from __future__ import annotations
-from typing import Any
-from app.application.ports.web_search_port import WebSearchPort
-from app.application.ports.profile_scraper_port import ProfileScraperPort
-from app.application.ports.page_fetcher_port import PageFetcherPort
-from app.application.ports.llm_port import LlmPort
-from app.application.ports.report_extractor_port import ReportExtractorPort
+from uuid import UUID
 from app.application.ports.cache_port import CachePort
+from app.application.ports.company_repository import CompanyRepository
 from app.application.ports.job_store_port import JobStorePort
+from app.application.ports.llm_port import LlmPort
+from app.application.ports.page_fetcher_port import PageFetcherPort
+from app.application.ports.profile_scraper_port import ProfileScraperPort
+from app.application.ports.report_extractor_port import ReportExtractorPort
 from app.application.ports.report_import_port import ReportImportPort, ImportResult
+from app.application.ports.web_search_port import WebSearchPort
+from app.domain.entities.company import Company
 from app.domain.entities.discovery import *
 
 
@@ -110,3 +112,37 @@ class FakeReportImport(ReportImportPort):
         company_name = raw_data.get('canonical', {}).get('meta', {}).get('company_name', 'unknown')
         slug = company_name.lower().replace(' ', '-')
         return ImportResult(status='created', company_slug=slug, message='ok')
+
+
+class FakeCompanyRepository(CompanyRepository):
+    def __init__(self, companies: list[Company] | None = None) -> None:
+        self.companies: dict[str, Company] = {c.slug: c for c in (companies or [])}
+
+    async def find_all(self) -> list[Company]:
+        return sorted(list(self.companies.values()), key=lambda c: c.name)
+
+    async def find_by_id(self, company_id: UUID) -> Company | None:
+        for c in self.companies.values():
+            if c.id == company_id:
+                return c
+        return None
+
+    async def find_by_slug(self, slug: str) -> Company | None:
+        return self.companies.get(slug)
+
+    async def find_by_name(self, name: str) -> Company | None:
+        for c in self.companies.values():
+            if c.name.lower() == name.lower():
+                return c
+        return None
+
+    async def save(self, company: Company) -> Company:
+        self.companies[company.slug] = company
+        return company
+
+    async def delete_by_slug(self, slug: str) -> bool:
+        if slug in self.companies:
+            del self.companies[slug]
+            return True
+        return False
+

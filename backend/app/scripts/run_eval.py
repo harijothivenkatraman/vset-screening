@@ -24,15 +24,17 @@ logger = logging.getLogger("eval")
 from app.infrastructure.discovery.jobs.in_memory_job_store import InMemoryJobStore
 
 
+from typing import Any
+
 from app.application.ports.report_import_port import ImportResult, ReportImportPort
 
 
 class CapturingReportImportAdapter(ReportImportPort):
     def __init__(self) -> None:
-        self.imported_reports: dict[str, dict] = {}
+        self.imported_reports: dict[str, dict[str, Any]] = {}
 
-    async def import_report(self, report_json: dict) -> ImportResult:
-        slug = report_json["canonical"]["meta"]["report_id"]
+    async def import_report(self, report_json: dict[str, Any]) -> ImportResult:
+        slug = str(report_json["canonical"]["meta"]["report_id"])
         self.imported_reports[slug] = report_json
         return ImportResult(status="created", company_slug=slug, message="Successfully imported")
 
@@ -42,7 +44,7 @@ async def run_discovery_eval(
     founder_names: list[str],
     confirmed_urls: dict[str, str],
     search_snippets: dict[str, str] | None = None,
-) -> tuple[DiscoveryJob, dict | None]:
+) -> tuple[DiscoveryJob, dict[str, Any] | None]:
     job_id = f"job-{uuid.uuid4().hex[:8]}"
     now = datetime.now(timezone.utc)
     job = DiscoveryJob(
@@ -79,12 +81,12 @@ async def run_discovery_eval(
     )
 
     await service.execute(job)
-    final_job = await job_store.get(job_id)
+    final_job = await job_store.get(job_id) or job
     report = report_importer.imported_reports.get(final_job.result_slug) if final_job.result_slug else None
     return final_job, report
 
 
-def print_evaluation_summary(label: str, job: DiscoveryJob, report: dict | None) -> None:
+def print_evaluation_summary(label: str, job: DiscoveryJob, report: dict[str, Any] | None) -> None:
     print(f"\n{'='*70}\nEVALUATION: {label}\n{'='*70}")
     print(f"Job ID: {job.id}")
     print(f"Company: {job.company_name}")

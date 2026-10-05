@@ -6,6 +6,7 @@ from app.presentation.dependencies import (
     get_section_nav_service,
     get_section_service,
 )
+from app.presentation.guards.api_key_guard import verify_read_or_admin_key
 from app.presentation.schemas.section_schemas import (
     InfoToPrepareItem,
     SectionDetailResponse,
@@ -16,7 +17,7 @@ from app.presentation.schemas.section_schemas import (
 router = APIRouter(prefix="/companies/{slug}/sections", tags=["sections"])
 
 
-@router.get("", response_model=SectionNavListResponse)
+@router.get("", response_model=SectionNavListResponse, dependencies=[Depends(verify_read_or_admin_key)])
 async def get_sections_nav(
     slug: str,
     service: GetSectionNavService = Depends(get_section_nav_service),
@@ -39,7 +40,7 @@ async def get_sections_nav(
     )
 
 
-@router.get("/{key}", response_model=SectionDetailResponse)
+@router.get("/{key}", response_model=SectionDetailResponse, dependencies=[Depends(verify_read_or_admin_key)])
 async def get_section_detail(
     slug: str,
     key: str,

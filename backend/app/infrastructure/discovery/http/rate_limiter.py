@@ -30,7 +30,7 @@ class HostRateLimiter:
             if host not in self._locks:
                 # Evict oldest if capacity exceeded
                 if len(self._locks) >= self._max_tracked_hosts:
-                    oldest_host = min(self._last_access, key=self._last_access.get, default=None)
+                    oldest_host = min(self._last_access, key=lambda h: self._last_access.get(h, 0.0), default=None)
                     if oldest_host:
                         self._last_access.pop(oldest_host, None)
                         self._locks.pop(oldest_host, None)

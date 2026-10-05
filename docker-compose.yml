@@ -65,7 +65,6 @@ services:
       dockerfile: Dockerfile
       args:
         VITE_API_BASE_URL: /api/v1
-        VITE_API_KEY: ${IMPORT_API_KEY}
     restart: unless-stopped
     ports:
       - "80:80"

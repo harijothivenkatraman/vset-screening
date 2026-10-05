@@ -5,6 +5,7 @@ import inspect
 import pytest
 
 from app.application.ports.cache_port import CachePort
+from app.application.ports.company_repository import CompanyRepository
 from app.application.ports.evidence_source_port import EvidenceSourcePort
 from app.application.ports.job_store_port import JobStorePort
 from app.application.ports.llm_port import LlmPort
@@ -29,9 +30,11 @@ from app.infrastructure.discovery.scrapers.website_fetcher import WebsiteFetcher
 from app.infrastructure.discovery.search.duckduckgo_search import DuckDuckGoSearchAdapter
 from app.infrastructure.discovery.search.fallback_search import FallbackSearchAdapter
 from app.infrastructure.discovery.search.searxng_search import SearXNGSearchAdapter
+from app.infrastructure.persistence.company_repo import SqlAlchemyCompanyRepository
 
 from tests.fakes.fake_ports import (
     FakeCache,
+    FakeCompanyRepository,
     FakeJobStore,
     FakeLlm,
     FakePageFetcher,
@@ -146,4 +149,101 @@ class TestPortContracts:
     )
     def test_evidence_source_port_contract(self, adapter_cls: type) -> None:
         _assert_implements_interface(adapter_cls, EvidenceSourcePort)
+
+    @pytest.mark.parametrize(
+        "adapter_cls",
+        [
+            FakeCompanyRepository,
+            SqlAlchemyCompanyRepository,
+        ],
+    )
+    def test_company_repository_contract(self, adapter_cls: type) -> None:
+        _assert_implements_interface(adapter_cls, CompanyRepository)
+
+
+import uuid
+from datetime import datetime, timezone
+from app.domain.entities.company import Company
+
+
+@pytest.mark.asyncio
+async def test_fake_company_repository_crud_contract() -> None:
+    repo = FakeCompanyRepository()
+    cid = uuid.uuid4()
+    now = datetime.now(timezone.utc)
+    comp = Company(
+        id=cid,
+        slug="test-co",
+        name="Test Company",
+        website="https://test.co",
+        created_at=now,
+        updated_at=now,
+    )
+    await repo.save(comp)
+
+    # find_by_slug
+    found = await repo.find_by_slug("test-co")
+    assert found is not None
+    assert found.id == cid
+    assert found.name == "Test Company"
+
+    # find_by_id
+    found_id = await repo.find_by_id(cid)
+    assert found_id is not None
+    assert found_id.slug == "test-co"
+
+    # find_by_name
+    found_name = await repo.find_by_name("test company")
+    assert found_name is not None
+
+    # find_all
+    all_comps = await repo.find_all()
+    assert len(all_comps) == 1
+
+    # delete_by_slug
+    assert await repo.delete_by_slug("test-co") is True
+    assert await repo.delete_by_slug("test-co") is False
+    assert await repo.find_by_slug("test-co") is None
+
+
+@pytest.mark.asyncio
+async def test_sqlalchemy_company_repository_crud_contract(db_session) -> None:
+    repo = SqlAlchemyCompanyRepository(db_session)
+    cid = uuid.uuid4()
+    now = datetime.now(timezone.utc)
+    comp = Company(
+        id=cid,
+        slug="test-co-sql",
+        name="Test Company SQL",
+        website="https://test-sql.co",
+        created_at=now,
+        updated_at=now,
+    )
+    await repo.save(comp)
+
+    # find_by_slug
+    found = await repo.find_by_slug("test-co-sql")
+    assert found is not None
+    assert found.id == cid
+    assert found.name == "Test Company SQL"
+
+    # find_by_id
+    found_id = await repo.find_by_id(cid)
+    assert found_id is not None
+    assert found_id.slug == "test-co-sql"
+
+    # find_by_name
+    found_name = await repo.find_by_name("Test Company SQL")
+    assert found_name is not None
+
+    # find_all
+    all_comps = await repo.find_all()
+    assert any(c.slug == "test-co-sql" for c in all_comps)
+
+    # delete_by_slug
+    assert await repo.delete_by_slug("test-co-sql") is True
+    assert await repo.delete_by_slug("test-co-sql") is False
+    assert await repo.find_by_slug("test-co-sql") is None
+
+
 

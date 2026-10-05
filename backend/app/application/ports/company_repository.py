@@ -24,3 +24,7 @@ class CompanyRepository(ABC):
     @abstractmethod
     async def save(self, company: Company) -> Company:
         pass
+
+    @abstractmethod
+    async def delete_by_slug(self, slug: str) -> bool:
+        pass

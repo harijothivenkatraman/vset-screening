@@ -41,7 +41,7 @@ class StartDiscoveryJobRequest(BaseModel):
     confirmed_urls: dict[str, str] = Field(default_factory=dict)
     search_snippets: dict[str, str] = Field(default_factory=dict)
     manual_evidence: dict[str, ManualEvidenceItemSchema] = Field(default_factory=dict)
-    skip_llm_validation: bool = False
+    llm_model: str | None = None
 
 
 class StartDiscoveryJobResponse(BaseModel):
@@ -76,5 +76,6 @@ class DiscoveryHealthResponse(BaseModel):
     llm_reachable: bool
     model_available: bool = True
     llm_model: str
+    installed_models: list[str] = Field(default_factory=list)
     search_providers: list[str]
     free_disk_gb: float
