@@ -431,15 +431,19 @@ async def run_migration(dry_run: bool = True) -> list[FounderProfile]:
                 else p.screening_assessment
             )
             print(f"    From vSET screening:  \"{preview}\"")
-        print(f"    Experience:           {len(p.experience_timeline)} roles")
+        desc_count = sum(1 for exp in p.experience_timeline if exp.description)
+        print(f"    Experience:           {len(p.experience_timeline)} roles (descriptions: {desc_count} present, absent from reference screen)")
         for exp in p.experience_timeline:
             dur_str = f" ({exp.duration})" if exp.duration else ""
-            print(f"      * {exp.title} - {exp.company}{dur_str}")
+            desc_str = f" -> desc: '{exp.description}'" if exp.description else " -> desc: None"
+            print(f"      * {exp.title} - {exp.company}{dur_str}{desc_str}")
         print(f"    Education:            {len(p.education)} records")
         for edu in p.education:
             deg_prefix = f"{edu.degree} - " if edu.degree else ""
             year_suffix = f" ({edu.end_year})" if edu.end_year else ""
             print(f"      * {deg_prefix}{edu.school}{year_suffix}")
+        print(f"    Skills:               {len(p.skills)} (absent from reference screen: None)")
+        print(f"    Certifications:       {len(p.certifications)} (absent from reference screen: None)")
         print("-" * 80)
 
     if dry_run:

@@ -31,6 +31,16 @@ export const AdminKeyModal: React.FC<AdminKeyModalProps> = ({
     }
   }, [isOpen]);
 
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && isOpen) {
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   const handleSave = (e: React.FormEvent) => {
@@ -48,7 +58,7 @@ export const AdminKeyModal: React.FC<AdminKeyModalProps> = ({
     onClose();
   };
 
-  const handleClear = () => {
+  const handleLock = () => {
     sessionStorage.removeItem(ADMIN_KEY_STORAGE_KEY);
     setCurrentKey(null);
     setApiKey("");
@@ -69,7 +79,7 @@ export const AdminKeyModal: React.FC<AdminKeyModalProps> = ({
           <div className="flex items-center gap-2">
             <KeyRound className="w-5 h-5 text-slate-700" />
             <h2 id="admin-key-modal-title" className="text-base font-semibold text-slate-900">
-              Admin Access Key
+              {currentKey ? "Editing Unlocked" : "Unlock Editing"}
             </h2>
           </div>
           <button
@@ -85,26 +95,22 @@ export const AdminKeyModal: React.FC<AdminKeyModalProps> = ({
         <form onSubmit={handleSave} className="p-6 space-y-4">
           <div className="text-xs text-slate-600 leading-relaxed space-y-2">
             <p>
-              Public profiles, searches, and canonical JSON exports are readable without authentication.
+              Public profiles, searches, and catalog entries are readable without authentication.
             </p>
             <p>
-              Administrative actions (adding, updating, restoring, and deleting profiles) require the server’s{" "}
-              <code className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-800 font-mono text-[11px]">
-                IMPORT_API_KEY
-              </code>
-              .
+              Unlocking editing requires the administrative API key (sent over HTTPS only and stored in temporary sessionStorage).
             </p>
           </div>
 
           {currentKey ? (
             <div className="flex items-center gap-2 p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-800">
               <ShieldCheck className="w-4 h-4 shrink-0 text-emerald-600" />
-              <span>Admin Key is active in this session.</span>
+              <span>Editing unlocked for this browser session.</span>
             </div>
           ) : (
             <div className="flex items-center gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">
               <ShieldAlert className="w-4 h-4 shrink-0 text-amber-600" />
-              <span>Currently in Read-Only mode.</span>
+              <span>Editing is locked. Enter key to unlock write actions.</span>
             </div>
           )}
 
@@ -113,7 +119,7 @@ export const AdminKeyModal: React.FC<AdminKeyModalProps> = ({
               htmlFor="admin-key-input"
               className="block text-xs font-medium text-slate-700 mb-1"
             >
-              API Key (stored in sessionStorage only)
+              Admin Key
             </label>
             <input
               id="admin-key-input"
@@ -131,10 +137,10 @@ export const AdminKeyModal: React.FC<AdminKeyModalProps> = ({
                 type="button"
                 variant="ghost"
                 size="sm"
-                onClick={handleClear}
+                onClick={handleLock}
                 className="text-rose-600 hover:text-rose-700 hover:bg-rose-50"
               >
-                Clear Key
+                Lock editing
               </Button>
             ) : <span />}
             <div className="flex items-center gap-2">
@@ -142,7 +148,7 @@ export const AdminKeyModal: React.FC<AdminKeyModalProps> = ({
                 Cancel
               </Button>
               <Button type="submit" variant="primary" size="sm">
-                Save Key
+                Unlock editing
               </Button>
             </div>
           </div>

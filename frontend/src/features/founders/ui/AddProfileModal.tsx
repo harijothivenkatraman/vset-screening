@@ -1,24 +1,28 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import {
+  Search,
   FileText,
-  Globe,
   Upload,
   AlertTriangle,
   CheckCircle2,
   AlertCircle,
   X,
   ExternalLink,
-  ShieldAlert,
+  ChevronDown,
+  ChevronUp,
+  Loader2,
+  Clock,
 } from "lucide-react";
 import { Button } from "@/shared/ui/Button";
 import {
+  useAutoDiscoverFounder,
   useCreateFounder,
   useUploadFounderPdf,
-  useTryPublicFetch,
   useSavePending,
 } from "../hooks";
-import { PublicFetchResponse } from "../types";
+import { AutoDiscoverResponse, FounderProfile } from "../types";
+import { getAdminKey } from "./AdminKeyModal";
 
 interface AddProfileModalProps {
   isOpen: boolean;
@@ -26,7 +30,7 @@ interface AddProfileModalProps {
   onSuccess?: (slug: string) => void;
 }
 
-const MAX_PDF_BYTES = 2 * 1024 * 1024; // 2 MB
+const MAX_PDF_BYTES = 2 * 1024 * 1024; // 2 MB Lightsail cap
 
 export const AddProfileModal: React.FC<AddProfileModalProps> = ({
   isOpen,
@@ -34,42 +38,63 @@ export const AddProfileModal: React.FC<AddProfileModalProps> = ({
   onSuccess,
 }) => {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<"manual" | "fetch">("manual");
+  const modalRef = useRef<HTMLDivElement>(null);
 
-  // Form states - Manual
+  // Form states
   const [founderName, setFounderName] = useState("");
   const [companyName, setCompanyName] = useState("");
+  const [profileUrl, setProfileUrl] = useState("");
+  const [companyWebsite, setCompanyWebsite] = useState("");
   const [notes, setNotes] = useState("");
+
+  // Flow states: 'idle' | 'searching' | 'likely_match' | 'fallback_manual'
+  const [flowState, setFlowState] = useState<"idle" | "searching" | "likely_match" | "fallback_manual">("idle");
+  const [autoDiscoverResult, setAutoDiscoverResult] = useState<AutoDiscoverResponse | null>(null);
+
+  // Manual fallback inputs
+  const [showDirectManual, setShowDirectManual] = useState(false);
   const [evidenceMode, setEvidenceMode] = useState<"text" | "pdf">("text");
   const [evidenceText, setEvidenceText] = useState("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
-  const [allowDuplicate, setAllowDuplicate] = useState(false);
   const [conflictSlug, setConflictSlug] = useState<string | null>(null);
-
-  // Form states - Fetch
-  const [fetchUrl, setFetchUrl] = useState("");
-  const [fetchResult, setFetchResult] = useState<PublicFetchResponse | null>(null);
+  const [allowDuplicate, setAllowDuplicate] = useState(false);
   const [generalError, setGeneralError] = useState<string | null>(null);
 
+  // Mutations
+  const autoDiscoverMutation = useAutoDiscoverFounder();
   const createMutation = useCreateFounder();
   const uploadPdfMutation = useUploadFounderPdf();
-  const fetchMutation = useTryPublicFetch();
   const pendingMutation = useSavePending();
+
+  // Escape key handler
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && isOpen) {
+        handleClose();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
   const resetState = () => {
     setFounderName("");
     setCompanyName("");
+    setProfileUrl("");
+    setCompanyWebsite("");
     setNotes("");
+    setFlowState("idle");
+    setAutoDiscoverResult(null);
+    setShowDirectManual(false);
+    setEvidenceMode("text");
     setEvidenceText("");
     setSelectedFile(null);
     setFileError(null);
-    setAllowDuplicate(false);
     setConflictSlug(null);
-    setFetchUrl("");
-    setFetchResult(null);
+    setAllowDuplicate(false);
     setGeneralError(null);
   };
 
@@ -87,7 +112,7 @@ export const AddProfileModal: React.FC<AddProfileModalProps> = ({
     }
     if (file.size > MAX_PDF_BYTES) {
       setFileError(
-        `File size (${(file.size / (1024 * 1024)).toFixed(2)} MB) exceeds the 2 MB limit (Lightsail budget). Please select a file under 2 MB.`
+        `File size (${(file.size / (1024 * 1024)).toFixed(2)} MB) exceeds the 2 MB cap. Please select a file under 2 MB.`
       );
       setSelectedFile(null);
       return;
@@ -95,203 +120,168 @@ export const AddProfileModal: React.FC<AddProfileModalProps> = ({
     setSelectedFile(file);
   };
 
-  // Submit Manual Evidence (Text or PDF)
-  const handleManualSubmit = async (e: React.FormEvent) => {
+  // ── Primary Action: Find profile (Auto-extract flow) ───────────────────────
+  const handleFindProfile = async (e: React.FormEvent) => {
     e.preventDefault();
-    setGeneralError(null);
-    setConflictSlug(null);
-
     if (!founderName.trim()) {
       setGeneralError("Founder name is required.");
       return;
     }
 
+    setGeneralError(null);
+    setFlowState("searching");
+    const adminKey = getAdminKey() || undefined;
+
     try {
-      if (evidenceMode === "text") {
-        if (!evidenceText.trim()) {
-          setGeneralError("Please paste profile text evidence.");
-          return;
-        }
-        const profile = await createMutation.mutateAsync({
-          data: {
-            founder_name: founderName.trim(),
-            company_name: companyName.trim() || null,
-            evidence_text: evidenceText.trim(),
-            notes: notes.trim() || null,
-            allow_duplicate: allowDuplicate,
-          },
-        });
+      const res = await autoDiscoverMutation.mutateAsync({
+        data: {
+          founder_name: founderName.trim(),
+          company_name: companyName.trim() || undefined,
+          profile_url: profileUrl.trim() || undefined,
+          company_website: companyWebsite.trim() || undefined,
+        },
+        apiKey: adminKey,
+      });
+
+      setAutoDiscoverResult(res);
+
+      if (res.outcome === "verified" && res.candidate) {
+        // Outcome 1: Verified match -> Saved and navigate
+        const targetSlug = res.candidate.slug;
         handleClose();
-        if (onSuccess) onSuccess(profile.slug);
-        else navigate(`/profiles/${profile.slug}`);
+        if (onSuccess) onSuccess(targetSlug);
+        navigate(`/profiles/${targetSlug}`);
+      } else if (res.outcome === "likely_match") {
+        // Outcome 2: Likely match -> Needs confirmation in dialog
+        setFlowState("likely_match");
       } else {
-        // PDF mode
+        // Outcome 3: Blocked or Not found -> In-place switch to manual input
+        setFlowState("fallback_manual");
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to run automated profile search.";
+      setGeneralError(msg);
+      setFlowState("fallback_manual");
+    }
+  };
+
+  // ── Manual / Fallback Submit ───────────────────────────────────────────────
+  const handleManualSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!founderName.trim()) {
+      setGeneralError("Founder name is required.");
+      return;
+    }
+
+    setGeneralError(null);
+    setConflictSlug(null);
+    const adminKey = getAdminKey() || undefined;
+
+    try {
+      let saved: FounderProfile;
+
+      if (evidenceMode === "pdf") {
         if (!selectedFile) {
-          setGeneralError("Please select a PDF file under 2 MB.");
+          setFileError("Please choose a profile PDF to upload.");
           return;
         }
         const formData = new FormData();
-        formData.append("file", selectedFile);
         formData.append("founder_name", founderName.trim());
         if (companyName.trim()) formData.append("company_name", companyName.trim());
         if (notes.trim()) formData.append("notes", notes.trim());
         if (allowDuplicate) formData.append("allow_duplicate", "true");
+        formData.append("file", selectedFile);
 
-        const profile = await uploadPdfMutation.mutateAsync({ formData });
-        handleClose();
-        if (onSuccess) onSuccess(profile.slug);
-        else navigate(`/profiles/${profile.slug}`);
-      }
-    } catch (err: unknown) {
-      if (typeof err === "object" && err !== null && "status" in err && (err as { status: number }).status === 409) {
-        const errorData = (err as { data?: { existing_slug?: string; detail?: string } }).data;
-        const slug = errorData?.existing_slug || null;
-        setConflictSlug(slug);
-        setGeneralError(
-          errorData?.detail || "A profile for this founder and company already exists."
-        );
-      } else if (err instanceof Error) {
-        setGeneralError(err.message);
+        saved = await uploadPdfMutation.mutateAsync({ formData, apiKey: adminKey });
       } else {
-        setGeneralError("An error occurred while creating the profile.");
+        if (!evidenceText.trim()) {
+          setGeneralError("Please paste online profile text into the evidence box.");
+          return;
+        }
+        saved = await createMutation.mutateAsync({
+          data: {
+            founder_name: founderName.trim(),
+            company_name: companyName.trim() || undefined,
+            evidence_text: evidenceText.trim(),
+            notes: notes.trim() || undefined,
+            allow_duplicate: allowDuplicate,
+          },
+          apiKey: adminKey,
+        });
       }
-    }
-  };
 
-  // Try Public Fetch
-  const handleFetchSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setGeneralError(null);
-    setFetchResult(null);
-
-    if (!founderName.trim() || !fetchUrl.trim()) {
-      setGeneralError("Founder name and LinkedIn URL are required.");
-      return;
-    }
-
-    try {
-      const res = await fetchMutation.mutateAsync({
-        data: {
-          founder_name: founderName.trim(),
-          linkedin_url: fetchUrl.trim(),
-          company_name: companyName.trim() || null,
-          save_as_pending: false,
-        },
-      });
-      setFetchResult(res);
-    } catch (err: unknown) {
-      if (err instanceof Error) {
-        setGeneralError(err.message);
-      } else {
-        setGeneralError("Fetch attempt failed.");
-      }
-    }
-  };
-
-  // Save as Pending from Blocked Fetch
-  const handleSavePending = async () => {
-    setGeneralError(null);
-    try {
-      const profile = await pendingMutation.mutateAsync({
-        data: {
-          founder_name: founderName.trim(),
-          linkedin_url: fetchUrl.trim() || null,
-          company_name: companyName.trim() || null,
-          notes: notes.trim() || "Saved as pending after blocked public fetch",
-          verification_reason: fetchResult?.failure_reason || "Public fetch blocked",
-        },
-      });
       handleClose();
-      if (onSuccess) onSuccess(profile.slug);
-      else navigate(`/profiles/${profile.slug}`);
-    } catch (err: unknown) {
-      if (err instanceof Error) setGeneralError(err.message);
-      else setGeneralError("Failed to save pending profile.");
+      if (onSuccess) onSuccess(saved.slug);
+      navigate(`/profiles/${saved.slug}`);
+    } catch (err: any) {
+      const status = err?.status || err?.response?.status;
+      const data = err?.data || err?.response?.data;
+      if (status === 409 || data?.existing_slug || err?.existing_slug) {
+        setConflictSlug(data?.existing_slug || err?.existing_slug || "existing-profile");
+        setGeneralError(data?.detail || err?.detail || "A profile for this founder and company already exists.");
+      } else {
+        setGeneralError(err?.message || "Failed to save profile.");
+      }
     }
   };
 
-  // Switch to Manual tab with pre-filled details
-  const handleSwitchToManual = () => {
-    setActiveTab("manual");
-    setEvidenceMode("text");
-  };
+  // ── Save as Pending ────────────────────────────────────────────────────────
+  const handleSaveAsPending = async () => {
+    if (!founderName.trim()) return;
+    const adminKey = getAdminKey() || undefined;
 
-  const isSubmitting =
-    createMutation.isPending ||
-    uploadPdfMutation.isPending ||
-    fetchMutation.isPending ||
-    pendingMutation.isPending;
+    try {
+      const saved = await pendingMutation.mutateAsync({
+        data: {
+          founder_name: founderName.trim(),
+          company_name: companyName.trim() || undefined,
+          linkedin_url: autoDiscoverResult?.discovered_url || profileUrl.trim() || undefined,
+          notes: notes.trim() || "Saved as pending evidence by operator",
+          verification_reason: "Saved as pending after automated retrieval could not complete.",
+        },
+        apiKey: adminKey,
+      });
+
+      handleClose();
+      if (onSuccess) onSuccess(saved.slug);
+      navigate(`/profiles/${saved.slug}`);
+    } catch (err: any) {
+      setGeneralError(err?.message || "Failed to save profile as pending.");
+    }
+  };
 
   return (
     <div
       role="dialog"
       aria-modal="true"
-      aria-labelledby="add-profile-modal-title"
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs"
+      aria-labelledby="add-profile-dialog-title"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto"
     >
-      <div className="bg-white rounded-xl shadow-2xl border border-slate-200 w-full max-w-xl overflow-hidden flex flex-col max-h-[92vh]">
-        {/* Modal Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/80">
+      <div
+        ref={modalRef}
+        className="bg-white rounded-xl shadow-xl border border-slate-200 w-full max-w-xl overflow-hidden my-8"
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/70">
           <div>
-            <h2 id="add-profile-modal-title" className="text-base font-semibold text-slate-900">
+            <h2 id="add-profile-dialog-title" className="text-base font-bold text-slate-900">
               Add Founder Profile
             </h2>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Ingest verifiable profile evidence or test public scraping diagnostics
+            <p className="text-xs text-slate-500">
+              Find public profile online or provide manual profile evidence
             </p>
           </div>
           <button
+            type="button"
             onClick={handleClose}
             className="text-slate-400 hover:text-slate-600 p-1 rounded-md transition-colors"
-            aria-label="Close"
+            aria-label="Close dialog"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Tab Navigation */}
-        <div className="flex border-b border-slate-200 bg-slate-50 px-6 pt-2">
-          <button
-            type="button"
-            onClick={() => setActiveTab("manual")}
-            className={`flex items-center gap-2 px-4 py-2.5 text-xs font-medium border-b-2 transition-colors ${
-              activeTab === "manual"
-                ? "border-sky-600 text-sky-700 bg-white rounded-t-lg"
-                : "border-transparent text-slate-600 hover:text-slate-900"
-            }`}
-          >
-            <FileText className="w-4 h-4" />
-            <span>Manual Evidence (Text / PDF)</span>
-            <span className="text-[10px] bg-sky-100 text-sky-800 px-1.5 py-0.2 rounded font-semibold">
-              Primary
-            </span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab("fetch")}
-            className={`flex items-center gap-2 px-4 py-2.5 text-xs font-medium border-b-2 transition-colors ${
-              activeTab === "fetch"
-                ? "border-sky-600 text-sky-700 bg-white rounded-t-lg"
-                : "border-transparent text-slate-600 hover:text-slate-900"
-            }`}
-          >
-            <Globe className="w-4 h-4" />
-            <span>Try Public Fetch</span>
-            <span className="text-[10px] bg-slate-200 text-slate-700 px-1.5 py-0.2 rounded">
-              Diagnostic
-            </span>
-          </button>
-        </div>
-
-        {/* Modal Body */}
-        <div className="p-6 overflow-y-auto space-y-4">
-          {generalError && (
-            <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg text-xs text-rose-800 flex items-start gap-2">
-              <AlertCircle className="w-4 h-4 shrink-0 text-rose-600 mt-0.5" />
-              <div className="flex-1">{generalError}</div>
-            </div>
-          )}
-
+        <div className="p-6 space-y-6">
           {/* 409 Conflict Banner */}
           {conflictSlug && (
             <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-900 space-y-2">
@@ -304,7 +294,7 @@ export const AddProfileModal: React.FC<AddProfileModalProps> = ({
                 <code className="bg-amber-100 px-1 rounded font-mono text-[11px]">{conflictSlug}</code>
                 ).
               </p>
-              <div className="flex items-center gap-3 pt-1">
+              <div className="flex flex-wrap items-center gap-3 pt-1">
                 <Button
                   type="button"
                   variant="outline"
@@ -318,7 +308,7 @@ export const AddProfileModal: React.FC<AddProfileModalProps> = ({
                   <ExternalLink className="w-3.5 h-3.5 mr-1" />
                   View Existing Profile
                 </Button>
-                <label className="flex items-center gap-2 cursor-pointer font-medium select-none">
+                <label className="flex items-center gap-2 cursor-pointer font-medium select-none text-slate-800">
                   <input
                     type="checkbox"
                     checked={allowDuplicate}
@@ -331,332 +321,357 @@ export const AddProfileModal: React.FC<AddProfileModalProps> = ({
             </div>
           )}
 
-          {/* TAB 1: MANUAL EVIDENCE */}
-          {activeTab === "manual" && (
-            <form onSubmit={handleManualSubmit} className="space-y-4">
+          {generalError && !conflictSlug && (
+            <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg text-xs text-rose-800 flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0 text-rose-600 mt-0.5" />
+              <div className="flex-1">{generalError}</div>
+            </div>
+          )}
+
+          {/* ── STATE 1: Searching Spinner ───────────────────────────────────── */}
+          {flowState === "searching" && (
+            <div className="py-12 flex flex-col items-center justify-center text-center space-y-4">
+              <Loader2 className="w-10 h-10 text-sky-600 animate-spin" />
+              <div className="space-y-1">
+                <h3 className="text-sm font-semibold text-slate-900">
+                  Searching for {founderName}...
+                </h3>
+                <p className="text-xs text-slate-500 max-w-sm">
+                  Checking company website team pages and public search fallback. Verifying identity corroboration.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* ── STATE 2: Likely Match (Needs Confirmation) ────────────────────── */}
+          {flowState === "likely_match" && autoDiscoverResult?.candidate && (
+            <div className="space-y-4">
+              <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl space-y-2">
+                <div className="flex items-center gap-2 text-amber-900 font-semibold text-xs">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                  <span>Candidate found — Needs confirmation</span>
+                </div>
+                <p className="text-xs text-amber-800 leading-relaxed">
+                  We found an online profile matching <strong>{founderName}</strong> at <strong>{companyName || "the company"}</strong>, but it lacks full domain corroboration.
+                </p>
+                {autoDiscoverResult.discovered_url && (
+                  <div className="pt-1">
+                    <a
+                      href={autoDiscoverResult.discovered_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-xs text-sky-700 hover:underline"
+                    >
+                      <span>{autoDiscoverResult.discovered_url}</span>
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                  </div>
+                )}
+              </div>
+
+              <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                <div className="text-xs font-semibold text-slate-900">
+                  {autoDiscoverResult.candidate.founder_name}
+                </div>
+                {autoDiscoverResult.candidate.headline && (
+                  <div className="text-xs text-slate-600">
+                    {autoDiscoverResult.candidate.headline}
+                  </div>
+                )}
+                <div className="text-[11px] text-slate-500">
+                  Status: Saved as &ldquo;Needs confirmation&rdquo; in catalog
+                </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setFlowState("fallback_manual")}
+                  className="w-full sm:w-auto"
+                >
+                  Paste profile text instead
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="primary"
+                  size="sm"
+                  onClick={() => {
+                    const slug = autoDiscoverResult.candidate!.slug;
+                    handleClose();
+                    if (onSuccess) onSuccess(slug);
+                    navigate(`/profiles/${slug}`);
+                  }}
+                  className="w-full sm:w-auto"
+                >
+                  <CheckCircle2 className="w-4 h-4 mr-1.5" />
+                  View in Catalog
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* ── STATE 3: Fallback Manual (Blocked / Not found) ────────────────── */}
+          {flowState === "fallback_manual" && (
+            <div className="space-y-4">
+              <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl space-y-2">
+                <div className="flex items-center gap-2 text-amber-900 font-semibold text-xs">
+                  <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                  <span>We couldn&apos;t retrieve this profile automatically</span>
+                </div>
+                <p className="text-xs text-amber-800 leading-relaxed">
+                  Automated fetch was blocked by bot protection or no public profile could be confirmed. Paste the profile text or upload a &ldquo;Save to PDF&rdquo; export below.
+                </p>
+              </div>
+
+              <form onSubmit={handleManualSubmit} className="space-y-4">
+                {/* Method selector */}
+                <div className="flex gap-2 p-1 bg-slate-100 rounded-lg">
+                  <button
+                    type="button"
+                    onClick={() => setEvidenceMode("text")}
+                    className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-xs font-semibold transition-all ${
+                      evidenceMode === "text"
+                        ? "bg-white text-slate-900 shadow-xs"
+                        : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    <FileText className="w-3.5 h-3.5" />
+                    <span>Paste Profile Text</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEvidenceMode("pdf")}
+                    className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-xs font-semibold transition-all ${
+                      evidenceMode === "pdf"
+                        ? "bg-white text-slate-900 shadow-xs"
+                        : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>Upload Profile PDF</span>
+                  </button>
+                </div>
+
+                {evidenceMode === "text" ? (
+                  <div>
+                    <label className="block text-xs font-medium text-slate-700 mb-1">
+                      Profile Text Evidence <span className="text-rose-500">*</span>
+                    </label>
+                    <textarea
+                      value={evidenceText}
+                      onChange={(e) => setEvidenceText(e.target.value)}
+                      placeholder="Paste public profile text (headline, summary, experience timeline, education)..."
+                      rows={5}
+                      className="w-full p-3 text-xs font-mono border border-slate-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-sky-500 bg-slate-50/50"
+                      required
+                    />
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block text-xs font-medium text-slate-700 mb-1">
+                      Profile PDF File <span className="text-rose-500">*</span>
+                    </label>
+                    <div className="border-2 border-dashed border-slate-300 rounded-lg p-5 text-center bg-slate-50/50 hover:bg-slate-50 transition-colors">
+                      <Upload className="w-6 h-6 text-slate-400 mx-auto mb-2" />
+                      <input
+                        type="file"
+                        accept="application/pdf"
+                        onChange={handleFileChange}
+                        className="text-xs text-slate-500 file:mr-3 file:py-1 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-sky-50 file:text-sky-700 hover:file:bg-sky-100"
+                      />
+                      <p className="text-[11px] text-slate-400 mt-2">
+                        Upload a public profile &ldquo;Save to PDF&rdquo; export (Max 2 MB). Contact info &amp; PII are stripped automatically.
+                      </p>
+                    </div>
+                    {fileError && <p className="text-xs text-rose-600 mt-1">{fileError}</p>}
+                  </div>
+                )}
+
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-slate-200">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleSaveAsPending}
+                    className="w-full sm:w-auto text-amber-700 hover:bg-amber-50 border-amber-300"
+                    title="Persist profile as pending manual evidence"
+                  >
+                    <Clock className="w-3.5 h-3.5 mr-1 text-amber-600" />
+                    Save as pending
+                  </Button>
+
+                  <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setFlowState("idle")}
+                    >
+                      Back
+                    </Button>
+                    <Button
+                      type="submit"
+                      variant="primary"
+                      size="sm"
+                      disabled={createMutation.isPending || uploadPdfMutation.isPending}
+                    >
+                      {createMutation.isPending || uploadPdfMutation.isPending ? "Saving..." : "Save Profile"}
+                    </Button>
+                  </div>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {/* ── STATE 4: Idle Primary Form ───────────────────────────────────── */}
+          {flowState === "idle" && (
+            <form onSubmit={handleFindProfile} className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label
-                    htmlFor="manual-founder-name"
-                    className="block text-xs font-medium text-slate-700 mb-1"
-                  >
-                    Founder Full Name <span className="text-rose-500">*</span>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Founder Name <span className="text-rose-500">*</span>
                   </label>
                   <input
-                    id="manual-founder-name"
                     type="text"
-                    required
                     value={founderName}
                     onChange={(e) => setFounderName(e.target.value)}
-                    placeholder="e.g. Arpita Kapoor"
-                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-sky-500"
+                    placeholder="Asha Example"
+                    required
+                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-sky-500 bg-white"
                   />
                 </div>
+
                 <div>
-                  <label
-                    htmlFor="manual-company-name"
-                    className="block text-xs font-medium text-slate-700 mb-1"
-                  >
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
                     Company Name
                   </label>
                   <input
-                    id="manual-company-name"
                     type="text"
                     value={companyName}
                     onChange={(e) => setCompanyName(e.target.value)}
-                    placeholder="e.g. Mysa"
-                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-sky-500"
+                    placeholder="Example Corp"
+                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-sky-500 bg-white"
                   />
                 </div>
               </div>
 
-              {/* Mode switch: Paste Text vs Upload PDF */}
-              <div>
-                <span className="block text-xs font-medium text-slate-700 mb-1.5">
-                  Evidence Format <span className="text-rose-500">*</span>
-                </span>
-                <div className="flex gap-4">
-                  <label className="flex items-center gap-2 text-xs text-slate-700 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="evidenceMode"
-                      value="text"
-                      checked={evidenceMode === "text"}
-                      onChange={() => setEvidenceMode("text")}
-                      className="text-sky-600 focus:ring-sky-500"
-                    />
-                    <span>Paste Profile Text</span>
-                  </label>
-                  <label className="flex items-center gap-2 text-xs text-slate-700 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="evidenceMode"
-                      value="pdf"
-                      checked={evidenceMode === "pdf"}
-                      onChange={() => setEvidenceMode("pdf")}
-                      className="text-sky-600 focus:ring-sky-500"
-                    />
-                    <span>Upload LinkedIn PDF (&lt; 2 MB)</span>
-                  </label>
-                </div>
-              </div>
-
-              {evidenceMode === "text" ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label
-                    htmlFor="manual-evidence-text"
-                    className="block text-xs font-medium text-slate-700 mb-1"
-                  >
-                    Profile Evidence Text
+                  <label className="block text-xs font-medium text-slate-700 mb-1">
+                    Online Profile URL <span className="text-slate-400 font-normal">(optional)</span>
                   </label>
-                  <textarea
-                    id="manual-evidence-text"
-                    rows={6}
-                    required
-                    value={evidenceText}
-                    onChange={(e) => setEvidenceText(e.target.value)}
-                    placeholder={`Paste text copied from LinkedIn profile, e.g.:\nCEO & Co-founder at Company\n\nExperience:\nCEO, Company (2022 - Present)\nVP Product, Prior Corp (2018 - 2022)\n\nEducation:\nB.S. Computer Science, University (2014 - 2018)`}
-                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-sky-500 font-mono"
+                  <input
+                    type="url"
+                    value={profileUrl}
+                    onChange={(e) => setProfileUrl(e.target.value)}
+                    placeholder="https://www.linkedin.com/in/asha-example"
+                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-sky-500 bg-white"
                   />
-                  <p className="text-[11px] text-slate-500 mt-1">
-                    Contact info, personal phone numbers, and emails are scrubbed automatically before persistence.
-                  </p>
                 </div>
-              ) : (
-                <div className="space-y-2">
-                  <label
-                    htmlFor="manual-pdf-upload"
-                    className="block text-xs font-medium text-slate-700"
-                  >
-                    LinkedIn &quot;Save to PDF&quot; Document
-                  </label>
-                  <div className="border-2 border-dashed border-slate-300 rounded-lg p-5 text-center hover:border-sky-500 transition-colors bg-slate-50/50">
-                    <Upload className="w-8 h-8 mx-auto text-slate-400 mb-2" />
-                    <input
-                      id="manual-pdf-upload"
-                      type="file"
-                      accept=".pdf,application/pdf"
-                      onChange={handleFileChange}
-                      className="block w-full text-xs text-slate-500 file:mr-4 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-sky-50 file:text-sky-700 hover:file:bg-sky-100 cursor-pointer"
-                    />
-                    <p className="text-[11px] text-slate-500 mt-2">
-                      Strict 2 MB memory cap. Text is extracted locally using pure-Python streaming without OCR dependencies.
-                    </p>
-                  </div>
-                  {fileError && (
-                    <div className="p-2 bg-rose-50 border border-rose-200 rounded text-xs text-rose-700 flex items-center gap-1.5">
-                      <AlertCircle className="w-4 h-4 shrink-0 text-rose-500" />
-                      <span>{fileError}</span>
-                    </div>
-                  )}
-                  {selectedFile && !fileError && (
-                    <div className="p-2 bg-emerald-50 border border-emerald-200 rounded text-xs text-emerald-800 flex items-center gap-1.5">
-                      <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
-                      <span>
-                        Selected: <strong>{selectedFile.name}</strong> (
-                        {(selectedFile.size / 1024).toFixed(1)} KB)
-                      </span>
-                    </div>
-                  )}
-                </div>
-              )}
 
-              <div>
-                <label htmlFor="manual-notes" className="block text-xs font-medium text-slate-700 mb-1">
-                  Operator Notes (Optional)
-                </label>
-                <input
-                  id="manual-notes"
-                  type="text"
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  placeholder="Optional verification notes or provenance notes..."
-                  className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-sky-500"
-                />
+                <div>
+                  <label className="block text-xs font-medium text-slate-700 mb-1">
+                    Company Website <span className="text-slate-400 font-normal">(optional)</span>
+                  </label>
+                  <input
+                    type="url"
+                    value={companyWebsite}
+                    onChange={(e) => setCompanyWebsite(e.target.value)}
+                    placeholder="https://example.com"
+                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-sky-500 bg-white"
+                  />
+                </div>
               </div>
 
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              {/* Collapsible Direct Entry Accordion */}
+              <div className="pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowDirectManual((prev) => !prev)}
+                  className="flex items-center justify-between w-full text-xs font-medium text-slate-600 hover:text-slate-900 py-1"
+                >
+                  <span>Or enter profile text / upload PDF directly</span>
+                  {showDirectManual ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                </button>
+
+                {showDirectManual && (
+                  <div className="mt-3 p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
+                    <div className="flex gap-2 p-1 bg-white rounded-lg border border-slate-200">
+                      <button
+                        type="button"
+                        onClick={() => setEvidenceMode("text")}
+                        className={`flex-1 py-1 text-xs font-medium rounded-md transition-all ${
+                          evidenceMode === "text" ? "bg-slate-100 text-slate-900 font-semibold" : "text-slate-600"
+                        }`}
+                      >
+                        Pasted Text
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEvidenceMode("pdf")}
+                        className={`flex-1 py-1 text-xs font-medium rounded-md transition-all ${
+                          evidenceMode === "pdf" ? "bg-slate-100 text-slate-900 font-semibold" : "text-slate-600"
+                        }`}
+                      >
+                        Upload PDF (Max 2MB)
+                      </button>
+                    </div>
+
+                    {evidenceMode === "text" ? (
+                      <textarea
+                        value={evidenceText}
+                        onChange={(e) => setEvidenceText(e.target.value)}
+                        placeholder="Paste online profile text here..."
+                        rows={4}
+                        className="w-full p-2.5 text-xs font-mono border border-slate-300 rounded-lg bg-white"
+                      />
+                    ) : (
+                      <div>
+                        <input
+                          type="file"
+                          accept="application/pdf"
+                          onChange={handleFileChange}
+                          className="text-xs text-slate-500 file:mr-2 file:py-1 file:px-2.5 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-sky-50 file:text-sky-700"
+                        />
+                        {fileError && <p className="text-xs text-rose-600 mt-1">{fileError}</p>}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center justify-end gap-2 pt-4 border-t border-slate-200">
                 <Button type="button" variant="outline" size="sm" onClick={handleClose}>
                   Cancel
                 </Button>
-                <Button
-                  type="submit"
-                  variant="primary"
-                  size="sm"
-                  disabled={isSubmitting || (evidenceMode === "pdf" && !selectedFile)}
-                >
-                  {isSubmitting ? "Processing..." : "Create Founder Profile"}
-                </Button>
-              </div>
-            </form>
-          )}
-
-          {/* TAB 2: TRY PUBLIC FETCH */}
-          {activeTab === "fetch" && (
-            <div className="space-y-4">
-              <div className="p-3 bg-slate-100 border border-slate-200 rounded-lg text-xs text-slate-700 space-y-1">
-                <p className="font-semibold text-slate-900 flex items-center gap-1.5">
-                  <ShieldAlert className="w-4 h-4 text-slate-600" />
-                  <span>Public Retrieval Limits</span>
-                </p>
-                <p>
-                  LinkedIn blocks cloud datacenter IPs (HTTP 999 bot challenge).
-                  Failed or blocked attempts are <strong>never persisted automatically</strong> to keep the catalog clean.
-                </p>
-              </div>
-
-              <form onSubmit={handleFetchSubmit} className="space-y-3">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label
-                      htmlFor="fetch-founder-name"
-                      className="block text-xs font-medium text-slate-700 mb-1"
-                    >
-                      Founder Full Name <span className="text-rose-500">*</span>
-                    </label>
-                    <input
-                      id="fetch-founder-name"
-                      type="text"
-                      required
-                      value={founderName}
-                      onChange={(e) => setFounderName(e.target.value)}
-                      placeholder="e.g. Asha Example"
-                      className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-sky-500"
-                    />
-                  </div>
-                  <div>
-                    <label
-                      htmlFor="fetch-company-name"
-                      className="block text-xs font-medium text-slate-700 mb-1"
-                    >
-                      Company Name
-                    </label>
-                    <input
-                      id="fetch-company-name"
-                      type="text"
-                      value={companyName}
-                      onChange={(e) => setCompanyName(e.target.value)}
-                      placeholder="e.g. Example Corp"
-                      className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-sky-500"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label
-                    htmlFor="fetch-linkedin-url"
-                    className="block text-xs font-medium text-slate-700 mb-1"
+                {showDirectManual && (evidenceText.trim() || selectedFile) ? (
+                  <Button
+                    type="button"
+                    variant="primary"
+                    size="sm"
+                    onClick={handleManualSubmit}
+                    disabled={createMutation.isPending || uploadPdfMutation.isPending}
                   >
-                    Public LinkedIn URL <span className="text-rose-500">*</span>
-                  </label>
-                  <input
-                    id="fetch-linkedin-url"
-                    type="url"
-                    required
-                    value={fetchUrl}
-                    onChange={(e) => setFetchUrl(e.target.value)}
-                    placeholder="https://www.linkedin.com/in/username"
-                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-sky-500 font-mono"
-                  />
-                </div>
-
-                <div className="flex items-center justify-end pt-1">
+                    Save Manually
+                  </Button>
+                ) : (
                   <Button
                     type="submit"
                     variant="primary"
                     size="sm"
-                    disabled={fetchMutation.isPending}
+                    disabled={autoDiscoverMutation.isPending}
+                    className="gap-1.5"
                   >
-                    {fetchMutation.isPending ? "Executing Scraper..." : "Execute Public Fetch"}
+                    <Search className="w-3.5 h-3.5" />
+                    <span>Find profile</span>
                   </Button>
-                </div>
-              </form>
-
-              {/* Diagnostic Results Card */}
-              {fetchResult && (
-                <div className="mt-4 pt-4 border-t border-slate-200">
-                  {fetchResult.is_blocked ? (
-                    <div className="p-4 bg-amber-50 border border-amber-300 rounded-lg space-y-3">
-                      <div className="flex items-start gap-2">
-                        <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-                        <div>
-                          <h4 className="text-xs font-bold text-amber-900 uppercase tracking-wide">
-                            Fetch Blocked by Bot Protection
-                          </h4>
-                          <p className="text-xs text-amber-800 mt-1 leading-relaxed">
-                            {fetchResult.message}
-                          </p>
-                          {fetchResult.failure_reason && (
-                            <p className="text-[11px] font-mono text-amber-700 bg-amber-100/70 p-1.5 rounded mt-2">
-                              Diagnostic: {fetchResult.failure_reason}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="pt-2 flex flex-wrap items-center gap-2">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={handleSavePending}
-                          disabled={pendingMutation.isPending}
-                          className="bg-white border-amber-300 text-amber-900 hover:bg-amber-100/50"
-                        >
-                          {pendingMutation.isPending ? "Saving..." : "Save as Pending Evidence"}
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="primary"
-                          size="sm"
-                          onClick={handleSwitchToManual}
-                        >
-                          Provide Text / PDF Instead
-                        </Button>
-                      </div>
-                    </div>
-                  ) : fetchResult.candidate ? (
-                    <div className="p-4 bg-emerald-50 border border-emerald-300 rounded-lg space-y-3">
-                      <div className="flex items-center gap-2 text-emerald-800 font-semibold text-xs">
-                        <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                        <span>Profile Successfully Retrieved</span>
-                      </div>
-                      <div className="text-xs text-emerald-900 space-y-1">
-                        <p><strong>Name:</strong> {fetchResult.candidate.founder_name}</p>
-                        {fetchResult.candidate.headline && (
-                          <p><strong>Headline:</strong> {fetchResult.candidate.headline}</p>
-                        )}
-                        <p>
-                          <strong>Experience:</strong> {fetchResult.candidate.experience_timeline.length} roles found
-                        </p>
-                        <p>
-                          <strong>Education:</strong> {fetchResult.candidate.education.length} records found
-                        </p>
-                      </div>
-                      <div className="pt-2">
-                        <Button
-                          type="button"
-                          variant="primary"
-                          size="sm"
-                          onClick={() => {
-                            if (fetchResult.candidate) {
-                              handleClose();
-                              navigate(`/profiles/${fetchResult.candidate.slug}`);
-                            }
-                          }}
-                        >
-                          View Retrieved Profile
-                        </Button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="p-3 bg-slate-100 text-xs text-slate-700 rounded-lg">
-                      {fetchResult.message}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
+                )}
+              </div>
+            </form>
           )}
         </div>
       </div>

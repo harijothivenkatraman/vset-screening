@@ -18,11 +18,13 @@ from fastapi.responses import JSONResponse
 
 from app.application.services.pdf_extractor import MAX_PDF_BYTES
 from app.application.use_cases.add_from_evidence import AddFromEvidenceUseCase
+from app.application.use_cases.auto_discover_founder import AutoDiscoverFounderUseCase
 from app.application.use_cases.delete_profile import DeleteProfileUseCase
 from app.application.use_cases.export_profile import ExportProfileUseCase
 from app.application.use_cases.get_profile import GetProfileUseCase
 from app.application.use_cases.list_profiles import ListProfilesUseCase
 from app.application.use_cases.restore_profile_version import RestoreProfileVersionUseCase
+from app.application.use_cases.save_pending_profile import SavePendingProfileUseCase
 from app.application.use_cases.try_public_fetch import TryPublicFetchUseCase
 from app.application.use_cases.update_profile import UpdateProfileUseCase
 from app.domain.entities.founder_profile import FounderProfile
@@ -34,6 +36,7 @@ from app.domain.exceptions import (
 )
 from app.presentation.dependencies import (
     get_add_from_evidence_use_case,
+    get_auto_discover_founder_use_case,
     get_delete_profile_use_case,
     get_export_profile_use_case,
     get_get_profile_use_case,
@@ -43,11 +46,12 @@ from app.presentation.dependencies import (
     get_try_public_fetch_use_case,
     get_update_profile_use_case,
 )
-from app.application.use_cases.save_pending_profile import SavePendingProfileUseCase
 from app.presentation.guards.api_key_guard import verify_admin_key, verify_read_or_admin_key
 from app.presentation.guards.rate_limiter_guard import rate_limit_founder_action
 from app.presentation.schemas.founder_schemas import (
     AddFounderProfileRequest,
+    AutoDiscoverRequest,
+    AutoDiscoverResponse,
     FounderProfileListResponse,
     FounderProfileResponse,
     SavePendingProfileRequest,
@@ -241,6 +245,37 @@ async def try_public_fetch(
             status_code=status.HTTP_409_CONFLICT,
             detail=str(exc),
         ) from exc
+    except InvalidEvidenceException as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+
+
+@router.post(
+    "/auto-discover",
+    response_model=AutoDiscoverResponse,
+    dependencies=[Depends(verify_admin_key), Depends(rate_limit_founder_action)],
+    summary="Auto-discover public profile across website and search fallback",
+)
+async def auto_discover_founder(
+    payload: AutoDiscoverRequest,
+    use_case: AutoDiscoverFounderUseCase = Depends(get_auto_discover_founder_use_case),
+) -> AutoDiscoverResponse:
+    try:
+        result = await use_case.execute(
+            founder_name=payload.founder_name,
+            company_name=payload.company_name,
+            profile_url=payload.profile_url,
+            company_website=payload.company_website,
+        )
+        return AutoDiscoverResponse(
+            outcome=result.outcome,
+            candidate=_to_response_schema(result.candidate) if result.candidate else None,
+            persisted=result.persisted,
+            message=result.message,
+            discovered_url=result.discovered_url,
+        )
     except InvalidEvidenceException as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,

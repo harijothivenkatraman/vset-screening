@@ -297,3 +297,26 @@ async def test_rate_limiter_blocks_excessive_requests(client: AsyncClient) -> No
     # Reset limiter so downstream tests are not impacted
     founder_action_limiter.reset()
 
+
+@pytest.mark.asyncio
+async def test_auto_discover_unauthorized_without_admin_key(client: AsyncClient) -> None:
+    resp = await client.post(
+        "/api/v1/founders/auto-discover",
+        json={"founder_name": "Asha Example", "company_name": "Example Corp"},
+    )
+    assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_auto_discover_endpoint_returns_result_with_admin_key(client: AsyncClient) -> None:
+    resp = await client.post(
+        "/api/v1/founders/auto-discover",
+        json={"founder_name": "Asha Example", "company_name": "Example Corp"},
+        headers=ADMIN_HEADERS,
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "outcome" in data
+    assert "persisted" in data
+    assert "message" in data
+

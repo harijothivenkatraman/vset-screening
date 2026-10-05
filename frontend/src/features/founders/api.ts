@@ -1,6 +1,8 @@
 import { apiClient } from "@/core/http-client";
 import {
   AddFounderProfileRequest,
+  AutoDiscoverRequest,
+  AutoDiscoverResponse,
   FetchFounderRequest,
   FounderProfile,
   FounderProfileListResponse,
@@ -116,5 +118,16 @@ export async function deleteFounder(
 export async function exportFounderJson(slug: string): Promise<Record<string, unknown>> {
   return apiClient<Record<string, unknown>>(`/founders/${encodeURIComponent(slug)}/export`, {
     method: "GET",
+  });
+}
+
+export async function autoDiscoverFounder(
+  data: AutoDiscoverRequest,
+  apiKey?: string
+): Promise<AutoDiscoverResponse> {
+  return apiClient<AutoDiscoverResponse>("/founders/auto-discover", {
+    method: "POST",
+    body: JSON.stringify(data),
+    apiKey,
   });
 }

@@ -7,8 +7,11 @@ from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.ports.founder_profile_repository import FounderProfileRepository
+from app.application.ports.page_fetcher_port import PageFetcherPort
 from app.application.ports.profile_scraper_port import ProfileScraperPort
+from app.application.ports.web_search_port import WebSearchPort
 from app.application.use_cases.add_from_evidence import AddFromEvidenceUseCase
+from app.application.use_cases.auto_discover_founder import AutoDiscoverFounderUseCase
 from app.application.use_cases.delete_profile import DeleteProfileUseCase
 from app.application.use_cases.export_profile import ExportProfileUseCase
 from app.application.use_cases.get_profile import GetProfileUseCase
@@ -20,6 +23,10 @@ from app.application.use_cases.update_profile import UpdateProfileUseCase
 from app.config import get_settings
 from app.infrastructure.discovery.http.rate_limiter import HostRateLimiter
 from app.infrastructure.discovery.scrapers.linkedin_public import LinkedInPublicScraper
+from app.infrastructure.discovery.scrapers.website_fetcher import WebsiteFetcher
+from app.infrastructure.discovery.search.duckduckgo_search import DuckDuckGoSearchAdapter
+from app.infrastructure.discovery.search.fallback_search import FallbackSearchAdapter
+from app.infrastructure.discovery.search.searxng_search import SearXNGSearchAdapter
 from app.infrastructure.persistence.database import get_db_session
 from app.infrastructure.persistence.sqlite_founder_repository import (
     SqliteFounderProfileRepository,
@@ -100,3 +107,32 @@ def get_export_profile_use_case(
     repo: FounderProfileRepository = Depends(get_founder_profile_repository),
 ) -> ExportProfileUseCase:
     return ExportProfileUseCase(repo)
+
+
+def get_page_fetcher_port(
+    rate_limiter: HostRateLimiter = Depends(get_rate_limiter),
+) -> PageFetcherPort:
+    return WebsiteFetcher(rate_limiter=rate_limiter)
+
+
+def get_web_search_port() -> WebSearchPort:
+    settings = get_settings()
+    providers: list[tuple[str, WebSearchPort]] = []
+    if settings.SEARXNG_BASE_URL:
+        providers.append(("searxng", SearXNGSearchAdapter(base_url=settings.SEARXNG_BASE_URL)))
+    providers.append(("duckduckgo", DuckDuckGoSearchAdapter()))
+    return FallbackSearchAdapter(providers=providers)
+
+
+def get_auto_discover_founder_use_case(
+    repo: FounderProfileRepository = Depends(get_founder_profile_repository),
+    scraper: ProfileScraperPort = Depends(get_profile_scraper_port),
+    page_fetcher: PageFetcherPort = Depends(get_page_fetcher_port),
+    search_adapter: WebSearchPort = Depends(get_web_search_port),
+) -> AutoDiscoverFounderUseCase:
+    return AutoDiscoverFounderUseCase(
+        repository=repo,
+        scraper=scraper,
+        page_fetcher=page_fetcher,
+        search_adapter=search_adapter,
+    )

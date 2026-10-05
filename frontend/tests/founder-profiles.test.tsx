@@ -143,7 +143,9 @@ describe("Founder Profiles Standalone UI", () => {
 
       // Verify header
       expect(screen.getByText("Founder Profiles")).toBeInTheDocument();
-      expect(screen.getByText("Standalone")).toBeInTheDocument();
+      expect(
+        screen.getByText("Verifiable founder profile extraction and catalog")
+      ).toBeInTheDocument();
 
       // Verify stat cards
       await waitFor(() => {
@@ -151,15 +153,11 @@ describe("Founder Profiles Standalone UI", () => {
       });
       expect(screen.getByText("John Fictional")).toBeInTheDocument();
 
-      // Verify source chips
-      expect(screen.getByText("Provided by user (unverified)")).toBeInTheDocument();
-      expect(
-        screen.getByText("From vSET reference screen, 28 September 2026")
-      ).toBeInTheDocument();
-
-      // Verify role and education counts
-      expect(screen.getByText(/2\s*roles/i)).toBeInTheDocument();
-      expect(screen.getByText(/1\s*roles/i)).toBeInTheDocument();
+      // Verify source chips and tabs
+      expect(screen.getByText("Manual")).toBeInTheDocument();
+      expect(screen.getByText("Screening report")).toBeInTheDocument();
+      expect(screen.getByText(/From screening reports/i)).toBeInTheDocument();
+      expect(screen.getByText(/Added manually/i)).toBeInTheDocument();
     });
 
     it("filters profiles by search input", async () => {
@@ -257,21 +255,24 @@ describe("Founder Profiles Standalone UI", () => {
         </QueryClientProvider>
       );
 
+      // Open accordion for direct manual entry
+      fireEvent.click(screen.getByText(/Or enter profile text \/ upload PDF directly/i));
+
       // Switch to PDF mode
-      const pdfRadio = screen.getByLabelText(/Upload LinkedIn PDF/i);
-      fireEvent.click(pdfRadio);
+      fireEvent.click(screen.getByText(/Upload PDF \(Max 2MB\)/i));
 
       // Upload file exceeding 2 MB (e.g. 2.5 MB)
       const oversizedFile = new File([new ArrayBuffer(2.5 * 1024 * 1024)], "profile.pdf", {
         type: "application/pdf",
       });
-      const fileInput = screen.getByLabelText(/LinkedIn "Save to PDF" Document/i);
+      const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+      expect(fileInput).not.toBeNull();
       fireEvent.change(fileInput, { target: { files: [oversizedFile] } });
 
       // Early rejection warning is displayed
       await waitFor(() => {
         expect(
-          screen.getByText(/exceeds the 2 MB limit \(Lightsail budget\)/i)
+          screen.getByText(/exceeds the 2 MB cap/i)
         ).toBeInTheDocument();
       });
     });
@@ -294,19 +295,22 @@ describe("Founder Profiles Standalone UI", () => {
         </QueryClientProvider>
       );
 
-      // Fill in form
-      fireEvent.change(screen.getByLabelText(/Founder Full Name/i), {
+      // Fill in form inputs
+      fireEvent.change(screen.getByPlaceholderText("Asha Example"), {
         target: { value: "Asha Example" },
       });
-      fireEvent.change(screen.getByLabelText(/Company Name/i), {
+      fireEvent.change(screen.getByPlaceholderText("Example Corp"), {
         target: { value: "Example Corp" },
       });
-      fireEvent.change(screen.getByLabelText(/Profile Evidence Text/i), {
+
+      // Open direct manual entry accordion
+      fireEvent.click(screen.getByText(/Or enter profile text \/ upload PDF directly/i));
+      fireEvent.change(screen.getByPlaceholderText(/Paste online profile text here.../i), {
         target: { value: "Asha Example\nCEO at Example Corp\nExperience:\nCEO (2022)" },
       });
 
-      // Submit
-      fireEvent.click(screen.getByText("Create Founder Profile"));
+      // Submit manual entry
+      fireEvent.click(screen.getByText("Save Manually"));
 
       // Verify conflict banner
       await waitFor(() => {
@@ -314,6 +318,82 @@ describe("Founder Profiles Standalone UI", () => {
         expect(screen.getByText("View Existing Profile")).toBeInTheDocument();
         expect(
           screen.getByText("Create anyway (auto-disambiguate slug)")
+        ).toBeInTheDocument();
+      });
+    });
+
+    it("runs automated discovery flow and navigates to profile on verified outcome", async () => {
+      const autoDiscoverSpy = vi.spyOn(foundersApi, "autoDiscoverFounder").mockResolvedValue({
+        outcome: "verified",
+        persisted: true,
+        message: "Profile verified and saved.",
+        discovered_url: "https://www.linkedin.com/in/asha-example",
+        candidate: mockProfiles[0],
+      });
+
+      const queryClient = createTestQueryClient();
+      render(
+        <QueryClientProvider client={queryClient}>
+          <MemoryRouter>
+            <AddProfileModal isOpen={true} onClose={vi.fn()} />
+          </MemoryRouter>
+        </QueryClientProvider>
+      );
+
+      // Fill in name and company
+      fireEvent.change(screen.getByPlaceholderText("Asha Example"), {
+        target: { value: "Asha Example" },
+      });
+      fireEvent.change(screen.getByPlaceholderText("Example Corp"), {
+        target: { value: "Example Corp" },
+      });
+
+      // Submit Find profile form
+      const submitBtn = screen.getByRole("button", { name: /find profile/i });
+      fireEvent.submit(submitBtn.closest("form")!);
+
+      await waitFor(() => {
+        expect(autoDiscoverSpy).toHaveBeenCalledWith(
+          expect.objectContaining({
+            founder_name: "Asha Example",
+            company_name: "Example Corp",
+          }),
+          undefined
+        );
+      });
+    });
+
+    it("transitions to fallback manual entry when auto-discover is blocked", async () => {
+      vi.spyOn(foundersApi, "autoDiscoverFounder").mockResolvedValue({
+        outcome: "blocked",
+        persisted: false,
+        message: "Scraping blocked by bot challenge (HTTP 999).",
+        discovered_url: "https://www.linkedin.com/in/asha-example",
+        candidate: null,
+      });
+
+      const queryClient = createTestQueryClient();
+      render(
+        <QueryClientProvider client={queryClient}>
+          <MemoryRouter>
+            <AddProfileModal isOpen={true} onClose={vi.fn()} />
+          </MemoryRouter>
+        </QueryClientProvider>
+      );
+
+      fireEvent.change(screen.getByPlaceholderText("Asha Example"), {
+        target: { value: "Asha Example" },
+      });
+
+      const submitBtn = screen.getByRole("button", { name: /find profile/i });
+      fireEvent.submit(submitBtn.closest("form")!);
+
+      await waitFor(() => {
+        expect(
+          screen.getByText(/We couldn't retrieve this profile automatically/i)
+        ).toBeInTheDocument();
+        expect(
+          screen.getByPlaceholderText(/Paste public profile text/i)
         ).toBeInTheDocument();
       });
     });

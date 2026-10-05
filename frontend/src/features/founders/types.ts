@@ -1,5 +1,6 @@
 export type IdentityStatusType =
   | "verified"
+  | "likely_match"
   | "user_asserted"
   | "reference_screen"
   | "unverified";
@@ -10,7 +11,8 @@ export type RetrievalStatusType =
   | "blocked"
   | "pending_evidence"
   | "user_provided"
-  | "reference_screen";
+  | "reference_screen"
+  | "identity_unverified";
 
 export interface ExperienceItem {
   title: string;
@@ -107,4 +109,19 @@ export interface UpdateFounderProfileRequest {
   evidence_text?: string | null;
   notes?: string | null;
   screening_assessment?: string | null;
+}
+
+export interface AutoDiscoverRequest {
+  founder_name: string;
+  company_name?: string | null;
+  profile_url?: string | null;
+  company_website?: string | null;
+}
+
+export interface AutoDiscoverResponse {
+  outcome: "verified" | "likely_match" | "blocked" | "not_found";
+  candidate?: FounderProfile | null;
+  persisted: boolean;
+  message: string;
+  discovered_url?: string | null;
 }

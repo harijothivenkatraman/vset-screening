@@ -374,8 +374,8 @@ class LinkedInPublicScraper(ProfileScraperPort):
                 return PersonProfile(url=url, retrieved_at=now_iso, is_auth_walled=True)
 
         name = _parse_text_or_list(person_data.get("name")) or og.get("og:title")
-        if name and " | LinkedIn" in name:
-            name = name.split(" | LinkedIn")[0].strip()
+        if name:
+            name = re.split(r"\s*[|·\-–—]\s*(?:LinkedIn|Profil|Perfil).*$", name, flags=re.IGNORECASE)[0].strip()
 
         job_title_parsed = _parse_text_or_list(person_data.get("jobTitle"), delimiter=" - ")
         headline = job_title_parsed or og.get("og:description") or og.get("description")
@@ -399,13 +399,16 @@ class LinkedInPublicScraper(ProfileScraperPort):
                     if loc_cand:
                         location = loc_cand
                         break
+                elif isinstance(a, str) and a.strip():
+                    location = a.strip()
+                    break
         elif isinstance(address, str):
             location = address.strip()
 
-        # Extract worksFor and alumniOf from JSON-LD
+        # Extract worksFor and alumniOf from JSON-LD with support for dicts, strings, and mixed lists
         experience: list[dict[str, str]] = []
         works_for = person_data.get("worksFor", [])
-        if isinstance(works_for, dict):
+        if isinstance(works_for, (dict, str)):
             works_for = [works_for]
         for w in works_for:
             if isinstance(w, dict):
@@ -416,19 +419,36 @@ class LinkedInPublicScraper(ProfileScraperPort):
                     "company": comp_name or "",
                     "duration": "",
                 })
+            elif isinstance(w, str) and w.strip():
+                experience.append({
+                    "title": "",
+                    "company": w.strip(),
+                    "duration": "",
+                })
 
         education: list[dict[str, str]] = []
         alumni_of = person_data.get("alumniOf", [])
-        if isinstance(alumni_of, dict):
+        if isinstance(alumni_of, (dict, str)):
             alumni_of = [alumni_of]
         for a in alumni_of:
             if isinstance(a, dict):
                 inst_name = _parse_text_or_list(a.get("name")) or ""
                 deg_name = _parse_text_or_list(a.get("description")) or ""
+                year_cand = (
+                    extract_year(str(a.get("endDate") or a.get("startDate") or ""))
+                    or extract_year(str(a))
+                    or ""
+                )
                 education.append({
                     "institution": inst_name,
                     "degree": deg_name,
-                    "year": extract_year(str(a)) or "",
+                    "year": year_cand,
+                })
+            elif isinstance(a, str) and a.strip():
+                education.append({
+                    "institution": a.strip(),
+                    "degree": "",
+                    "year": "",
                 })
 
         return PersonProfile(

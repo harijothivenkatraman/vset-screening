@@ -111,3 +111,18 @@ class DuplicateConflictResponse(BaseModel):
     existing_id: str
     existing_slug: str
 
+
+class AutoDiscoverRequest(BaseModel):
+    founder_name: str
+    company_name: str | None = None
+    profile_url: str | None = None
+    company_website: str | None = None
+
+
+class AutoDiscoverResponse(BaseModel):
+    outcome: str
+    candidate: FounderProfileResponse | None = None
+    persisted: bool = False
+    message: str
+    discovered_url: str | None = None
+

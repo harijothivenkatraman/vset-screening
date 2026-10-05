@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  autoDiscoverFounder,
   createFounderFromText,
   deleteFounder,
   getFounder,
@@ -12,6 +13,7 @@ import {
 } from "./api";
 import {
   AddFounderProfileRequest,
+  AutoDiscoverRequest,
   FetchFounderRequest,
   SavePendingProfileRequest,
   UpdateFounderProfileRequest,
@@ -122,6 +124,19 @@ export function useDeleteFounder() {
     }) => deleteFounder(slug, confirm, apiKey),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["founders"] });
+    },
+  });
+}
+
+export function useAutoDiscoverFounder() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ data, apiKey }: { data: AutoDiscoverRequest; apiKey?: string }) =>
+      autoDiscoverFounder(data, apiKey),
+    onSuccess: (res) => {
+      if (res.persisted) {
+        queryClient.invalidateQueries({ queryKey: ["founders"] });
+      }
     },
   });
 }
