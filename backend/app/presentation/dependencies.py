@@ -22,6 +22,7 @@ from app.application.use_cases.try_public_fetch import TryPublicFetchUseCase
 from app.application.use_cases.update_profile import UpdateProfileUseCase
 from app.config import get_settings
 from app.infrastructure.discovery.http.rate_limiter import HostRateLimiter
+from app.infrastructure.discovery.scrapers.apify_linkedin import ApifyLinkedInScraper
 from app.infrastructure.discovery.scrapers.linkedin_public import LinkedInPublicScraper
 from app.infrastructure.discovery.scrapers.website_fetcher import WebsiteFetcher
 from app.infrastructure.discovery.search.duckduckgo_search import DuckDuckGoSearchAdapter
@@ -42,7 +43,12 @@ def get_rate_limiter() -> HostRateLimiter:
 def get_profile_scraper_port(
     rate_limiter: HostRateLimiter = Depends(get_rate_limiter),
 ) -> ProfileScraperPort:
-    return LinkedInPublicScraper(rate_limiter=rate_limiter)
+    settings = get_settings()
+    fallback = LinkedInPublicScraper(rate_limiter=rate_limiter)
+    return ApifyLinkedInScraper(
+        token=settings.APIFY_TOKEN,
+        fallback_scraper=fallback,
+    )
 
 
 def get_founder_profile_repository(
