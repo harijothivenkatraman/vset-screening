@@ -41,6 +41,21 @@ class Settings(BaseSettings):
     RATE_LIMIT_FETCH_PER_MINUTE_GLOBAL: int = 30
     SEARXNG_BASE_URL: str | None = None
     APIFY_TOKEN: str | None = None
+    BRIGHTDATA_API_TOKEN: str | None = None
+
+    @field_validator("BRIGHTDATA_API_TOKEN", mode="before")
+    @classmethod
+    def assemble_brightdata_token(cls, v: Any) -> Any:
+        if v and str(v).strip():
+            return str(v).strip()
+        import os
+        token = (
+            os.getenv("BRIGHTDATA_API_TOKEN")
+            or os.getenv("BRIGHTDATA_API_KEY")
+            or os.getenv("BRIGHT_DATA_API_KEY")
+            or os.getenv("BRIGHTDATA_TOKEN")
+        )
+        return str(token).strip() if token and str(token).strip() else None
 
     @field_validator("DATABASE_URL", mode="before")
     @classmethod

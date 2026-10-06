@@ -23,6 +23,7 @@ from app.application.use_cases.update_profile import UpdateProfileUseCase
 from app.config import get_settings
 from app.infrastructure.discovery.http.rate_limiter import HostRateLimiter
 from app.infrastructure.discovery.scrapers.apify_linkedin import ApifyLinkedInScraper
+from app.infrastructure.discovery.scrapers.brightdata_linkedin import BrightDataLinkedInScraper
 from app.infrastructure.discovery.scrapers.linkedin_public import LinkedInPublicScraper
 from app.infrastructure.discovery.scrapers.website_fetcher import WebsiteFetcher
 from app.infrastructure.discovery.search.duckduckgo_search import DuckDuckGoSearchAdapter
@@ -44,10 +45,22 @@ def get_profile_scraper_port(
     rate_limiter: HostRateLimiter = Depends(get_rate_limiter),
 ) -> ProfileScraperPort:
     settings = get_settings()
-    fallback = LinkedInPublicScraper(rate_limiter=rate_limiter)
-    return ApifyLinkedInScraper(
+    local_fallback = LinkedInPublicScraper(rate_limiter=rate_limiter)
+    apify_scraper = ApifyLinkedInScraper(
         token=settings.APIFY_TOKEN,
-        fallback_scraper=fallback,
+        fallback_scraper=local_fallback,
+    )
+    if settings.BRIGHTDATA_API_TOKEN:
+        return BrightDataLinkedInScraper(
+            token=settings.BRIGHTDATA_API_TOKEN,
+            fallback_scraper=apify_scraper,
+        )
+    if settings.APIFY_TOKEN:
+        return apify_scraper
+
+    return BrightDataLinkedInScraper(
+        token=None,
+        fallback_scraper=apify_scraper,
     )
 
 
