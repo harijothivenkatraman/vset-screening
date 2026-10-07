@@ -285,6 +285,7 @@ async def test_brightdata_scraper_error_without_fallback() -> None:
 
 
 def test_settings_brightdata_token_alias(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("BRIGHTDATA_API_TOKEN", raising=False)
     monkeypatch.setenv("BRIGHTDATA_API_KEY", "custom_key_from_env_32chars_test")
-    settings = Settings()
+    settings = Settings(BRIGHTDATA_API_TOKEN=None, _env_file=None)
     assert settings.BRIGHTDATA_API_TOKEN == "custom_key_from_env_32chars_test"

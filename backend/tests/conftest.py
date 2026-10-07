@@ -42,12 +42,48 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
         await conn.run_sync(Base.metadata.drop_all)
 
 
+from app.application.ports.profile_scraper_port import ProfileScraperPort
+from app.domain.entities.discovery import CompanyProfile, PersonProfile, SourceDiagnostic
+from app.presentation.dependencies import get_profile_scraper_port
+
+
+class FakeProfileScraper(ProfileScraperPort):
+    async def fetch_person(self, url: str) -> PersonProfile | None:
+        return PersonProfile(
+            name="Asha Example",
+            headline="CEO at Example Corp",
+            location="Bengaluru, Karnataka, India",
+            summary="Founder and CEO building next-gen platforms.",
+            experience=[
+                {
+                    "title": "CEO",
+                    "company": "Example Corp",
+                    "start": "2022",
+                    "end": "Present",
+                    "is_current": True,
+                }
+            ],
+            education=[
+                {"school": "Indian Institute of Science", "degree": "B.Tech", "year": "2018"}
+            ],
+            skills=["Leadership", "Strategy"],
+        )
+
+    async def fetch_company(self, url: str) -> CompanyProfile | None:
+        return CompanyProfile(
+            name="Example Corp",
+            description="Enterprise platform provider.",
+            industry="Software",
+        )
+
+
 @pytest_asyncio.fixture
 async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
     async def override_get_db() -> AsyncGenerator[AsyncSession, None]:
         yield db_session
 
     app.dependency_overrides[get_db_session] = override_get_db
+    app.dependency_overrides[get_profile_scraper_port] = lambda: FakeProfileScraper()
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
