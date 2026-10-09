@@ -14,3 +14,4 @@ httpx>=0.28.0
 beautifulsoup4>=4.12.0
 lxml>=5.0.0
 brightdata-sdk>=2.5.0
+reportlab>=4.0.0
