@@ -169,10 +169,11 @@ class AutoDiscoverFounderUseCase:
 
         edu_items = [
             EducationItem(
-                school=str(ed.get("institution") or ed.get("school") or ""),
-                degree=str(ed.get("degree") or ""),
-                field=str(ed.get("field") or ""),
-                start_year=str(ed.get("year") or ""),
+                school=str(ed.get("school") or ed.get("institution") or ed.get("title") or ""),
+                degree=str(ed.get("degree") or ed.get("subtitle") or ""),
+                field=str(ed.get("field") or ed.get("field_of_study") or ""),
+                start_year=str(ed.get("start_year") or ed.get("year") or ""),
+                end_year=str(ed.get("end_year") or ""),
             )
             for ed in (profile_dto.education or [])
         ]

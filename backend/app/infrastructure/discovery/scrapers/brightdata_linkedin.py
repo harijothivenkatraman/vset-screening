@@ -54,7 +54,15 @@ def map_brightdata_item_to_person_profile(
     name_clean = name or None
 
     headline = str(
-        item.get("headline") or item.get("position") or item.get("title") or ""
+        item.get("headline")
+        or item.get("position")
+        or item.get("title")
+        or (
+            item.get("current_company", {}).get("title")
+            if isinstance(item.get("current_company"), dict)
+            else ""
+        )
+        or ""
     ).strip() or None
     summary = str(
         item.get("about") or item.get("summary") or item.get("description") or ""
@@ -117,6 +125,21 @@ def map_brightdata_item_to_person_profile(
                 "is_current": is_curr,
             })
 
+    # If experiences list is empty, fallback to current_company metadata
+    curr_comp = item.get("current_company")
+    if not experiences and isinstance(curr_comp, dict) and curr_comp.get("name"):
+        comp_name = str(curr_comp.get("name") or "").strip()
+        comp_title = str(curr_comp.get("title") or headline or "Founder").strip()
+        experiences.append({
+            "title": comp_title,
+            "company": comp_name,
+            "start": "",
+            "end": "Present",
+            "duration": "",
+            "description": "",
+            "is_current": True,
+        })
+
     # Education
     raw_edu = item.get("education") or []
     education: list[dict[str, Any]] = []
@@ -125,9 +148,20 @@ def map_brightdata_item_to_person_profile(
             if not isinstance(ed, dict):
                 continue
             school = str(
-                ed.get("school") or ed.get("school_name") or ed.get("institution") or ""
+                ed.get("school")
+                or ed.get("school_name")
+                or ed.get("institution")
+                or ed.get("title")
+                or ed.get("name")
+                or item.get("educations_details")
+                or ""
             ).strip()
-            deg = str(ed.get("degree") or ed.get("degree_name") or "").strip()
+            deg = str(
+                ed.get("degree")
+                or ed.get("degree_name")
+                or ed.get("subtitle")
+                or ""
+            ).strip()
             field_study = str(ed.get("field_of_study") or ed.get("field") or "").strip()
             start_yr = str(ed.get("start_year") or ed.get("start_date") or "").strip()
             end_yr = str(ed.get("end_year") or ed.get("end_date") or "").strip()
@@ -144,7 +178,7 @@ def map_brightdata_item_to_person_profile(
             })
 
     # Skills
-    raw_skills = item.get("skills") or []
+    raw_skills = item.get("skills") or item.get("top_skills") or []
     skills: list[str] = []
     if isinstance(raw_skills, list):
         for s in raw_skills:
@@ -157,14 +191,14 @@ def map_brightdata_item_to_person_profile(
                 skills.append(s_name)
 
     # Certifications
-    raw_certs = item.get("certifications") or []
+    raw_certs = item.get("certifications") or item.get("licenses_and_certifications") or []
     certifications: list[str] = []
     if isinstance(raw_certs, list):
         for c in raw_certs:
             if isinstance(c, dict) and (c.get("name") or c.get("title")):
                 t = str(c.get("name") or c.get("title")).strip()
                 iss = str(c.get("issuer") or c.get("issued_by") or "").strip()
-                label = f"{t} - {iss}" if iss else t
+                label = f"{t} - {iss}" if iss and iss.strip().lower() != t.strip().lower() else t
                 if label not in certifications:
                     certifications.append(label)
             elif isinstance(c, str) and c.strip():
@@ -247,12 +281,10 @@ class BrightDataLinkedInScraper(ProfileScraperPort):
         token: str | None = None,
         client: Any = None,
         timeout: int = 180,
-        fallback_scraper: ProfileScraperPort | None = None,
     ) -> None:
         self._token = token
         self._client = client
         self._timeout = timeout
-        self._fallback_scraper = fallback_scraper
 
     async def fetch_company(self, url: str) -> CompanyProfile | None:
         """Fetch company profile."""
@@ -266,9 +298,6 @@ class BrightDataLinkedInScraper(ProfileScraperPort):
         normalized_url = normalize_linkedin_url(url)
 
         if not self._token and self._client is None:
-            if self._fallback_scraper:
-                logger.info("BRIGHTDATA_API_TOKEN not configured; delegating company fetch to fallback")
-                return await self._fallback_scraper.fetch_company_with_diagnostic(normalized_url)
             return None, SourceDiagnostic(
                 url=normalized_url,
                 outcome="token_missing",
@@ -294,8 +323,6 @@ class BrightDataLinkedInScraper(ProfileScraperPort):
             result_item = res[0] if isinstance(res, list) and res else res
             data = getattr(result_item, "data", None) if result_item else None
             if not data:
-                if self._fallback_scraper:
-                    return await self._fallback_scraper.fetch_company_with_diagnostic(normalized_url)
                 return None, SourceDiagnostic(
                     url=normalized_url,
                     outcome="not_found",
@@ -323,8 +350,6 @@ class BrightDataLinkedInScraper(ProfileScraperPort):
             )
         except Exception as exc:
             logger.warning("Bright Data company scrape failed for '%s': %s", normalized_url, exc)
-            if self._fallback_scraper:
-                return await self._fallback_scraper.fetch_company_with_diagnostic(normalized_url)
             return None, SourceDiagnostic(
                 url=normalized_url,
                 outcome="brightdata_error",
@@ -345,9 +370,6 @@ class BrightDataLinkedInScraper(ProfileScraperPort):
         normalized_url = normalize_linkedin_url(url)
 
         if not self._token and self._client is None:
-            if self._fallback_scraper:
-                logger.info("BRIGHTDATA_API_TOKEN not configured; delegating to fallback for '%s'", url)
-                return await self._fallback_scraper.fetch_person_with_diagnostic(normalized_url)
             return None, SourceDiagnostic(
                 url=normalized_url,
                 outcome="token_missing",
@@ -374,9 +396,6 @@ class BrightDataLinkedInScraper(ProfileScraperPort):
             data = getattr(result_item, "data", None) if result_item else None
             if not data:
                 logger.warning("Bright Data returned no data for '%s'", normalized_url)
-                if self._fallback_scraper:
-                    logger.info("Attempting fallback scraper following empty Bright Data response")
-                    return await self._fallback_scraper.fetch_person_with_diagnostic(normalized_url)
                 return None, SourceDiagnostic(
                     url=normalized_url,
                     outcome="not_found",
@@ -423,9 +442,6 @@ class BrightDataLinkedInScraper(ProfileScraperPort):
 
         except Exception as exc:
             logger.warning("Bright Data profile scrape failed for '%s': %s", normalized_url, exc)
-            if self._fallback_scraper:
-                logger.info("Attempting fallback scraper following Bright Data exception: %s", exc)
-                return await self._fallback_scraper.fetch_person_with_diagnostic(normalized_url)
             return None, SourceDiagnostic(
                 url=normalized_url,
                 outcome="brightdata_error",

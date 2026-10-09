@@ -548,14 +548,17 @@ export const FounderProfileBlock: React.FC<FounderProfileBlockProps> = ({ block 
                   Certifications
                 </span>
                 <div className="flex flex-wrap gap-1.5">
-                  {data.certifications.map((cert, idx) => (
-                    <span
-                      key={idx}
-                      className="px-2 py-0.5 bg-sky-50 text-sky-900 rounded text-xs font-medium border border-sky-200"
-                    >
-                      {cert}
-                    </span>
-                  ))}
+                  {data.certifications.map((rawCert, idx) => {
+                    const label = typeof rawCert === "string" ? rawCert : ((rawCert as any)?.name || JSON.stringify(rawCert));
+                    return (
+                      <span
+                        key={idx}
+                        className="px-2 py-0.5 bg-sky-50 text-sky-900 rounded text-xs font-medium border border-sky-200"
+                      >
+                        {label}
+                      </span>
+                    );
+                  })}
                 </div>
               </div>
             )}

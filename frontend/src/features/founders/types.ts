@@ -29,12 +29,14 @@ export interface EducationItem {
   year?: string | null;
 }
 
-export interface CertificationItem {
-  name: string;
-  authority?: string | null;
-  license_number?: string | null;
-  year?: string | null;
-}
+export type CertificationItem =
+  | string
+  | {
+      name: string;
+      authority?: string | null;
+      license_number?: string | null;
+      year?: string | null;
+    };
 
 export interface FounderRetrievalSummary {
   status: RetrievalStatusType;
@@ -59,7 +61,7 @@ export interface FounderProfile {
   experience_timeline: ExperienceItem[];
   education: EducationItem[];
   skills: string[];
-  certifications: CertificationItem[];
+  certifications: (CertificationItem | string)[];
   notes?: string | null;
   warnings: string[];
   has_previous_version: boolean;

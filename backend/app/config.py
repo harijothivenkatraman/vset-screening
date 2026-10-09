@@ -40,7 +40,6 @@ class Settings(BaseSettings):
     RATE_LIMIT_FETCH_PER_MINUTE_IP: int = 10
     RATE_LIMIT_FETCH_PER_MINUTE_GLOBAL: int = 30
     SEARXNG_BASE_URL: str | None = None
-    APIFY_TOKEN: str | None = None
     BRIGHTDATA_API_TOKEN: str | None = None
 
     @field_validator("BRIGHTDATA_API_TOKEN", mode="before")

@@ -208,63 +208,15 @@ async def test_brightdata_scraper_successful_company_fetch() -> None:
 
 
 @pytest.mark.asyncio
-async def test_brightdata_scraper_missing_token_with_fallback() -> None:
-    fallback = MagicMock()
-    fallback.fetch_person_with_diagnostic = AsyncMock(
-        return_value=(
-            None,
-            SourceDiagnostic(
-                url="https://www.linkedin.com/in/janesmith",
-                outcome="auth_wall",
-            ),
-        )
-    )
-
-    scraper = BrightDataLinkedInScraper(
-        token=None,
-        fallback_scraper=fallback,
-    )
-
+async def test_brightdata_scraper_missing_token() -> None:
+    scraper = BrightDataLinkedInScraper(token=None)
     profile, diag = await scraper.fetch_person_with_diagnostic("https://www.linkedin.com/in/janesmith")
-    assert fallback.fetch_person_with_diagnostic.called
-    assert diag.outcome == "auth_wall"
+    assert profile is None
+    assert diag.outcome == "token_missing"
 
 
 @pytest.mark.asyncio
-async def test_brightdata_scraper_error_with_fallback() -> None:
-    mock_client = MagicMock()
-    mock_scrape = MagicMock()
-    mock_linkedin = MagicMock()
-
-    mock_client.scrape = mock_scrape
-    mock_scrape.linkedin = mock_linkedin
-    mock_linkedin.profiles = AsyncMock(side_effect=Exception("Bright Data 401 Unauthorized"))
-
-    fallback = MagicMock()
-    fallback.fetch_person_with_diagnostic = AsyncMock(
-        return_value=(
-            None,
-            SourceDiagnostic(
-                url="https://www.linkedin.com/in/janesmith",
-                outcome="ok",
-                fields_extracted=["name"],
-            ),
-        )
-    )
-
-    scraper = BrightDataLinkedInScraper(
-        token="test_brightdata_token_123",
-        client=mock_client,
-        fallback_scraper=fallback,
-    )
-
-    profile, diag = await scraper.fetch_person_with_diagnostic("https://www.linkedin.com/in/janesmith")
-    assert fallback.fetch_person_with_diagnostic.called
-    assert diag.outcome == "ok"
-
-
-@pytest.mark.asyncio
-async def test_brightdata_scraper_error_without_fallback() -> None:
+async def test_brightdata_scraper_error() -> None:
     mock_client = MagicMock()
     mock_scrape = MagicMock()
     mock_linkedin = MagicMock()
@@ -276,7 +228,6 @@ async def test_brightdata_scraper_error_without_fallback() -> None:
     scraper = BrightDataLinkedInScraper(
         token="test_brightdata_token_123",
         client=mock_client,
-        fallback_scraper=None,
     )
 
     profile, diag = await scraper.fetch_person_with_diagnostic("https://www.linkedin.com/in/janesmith")
@@ -289,3 +240,68 @@ def test_settings_brightdata_token_alias(monkeypatch: pytest.MonkeyPatch) -> Non
     monkeypatch.setenv("BRIGHTDATA_API_KEY", "custom_key_from_env_32chars_test")
     settings = Settings(BRIGHTDATA_API_TOKEN=None, _env_file=None)
     assert settings.BRIGHTDATA_API_TOKEN == "custom_key_from_env_32chars_test"
+
+
+def test_map_brightdata_item_with_title_education_and_current_company() -> None:
+    sparse_data = {
+        "name": "Sathyabhushan M N",
+        "about": "Founder of Sathya Enterprises...",
+        "current_company": {
+            "name": "Sathya Enterprises",
+            "title": "Founder & CEO",
+        },
+        "education": [
+            {
+                "title": "B. M. S. College of Engineering",
+                "subtitle": "Bachelor of Engineering",
+                "start_year": "2020-12",
+                "end_year": "2024-04",
+            }
+        ],
+    }
+    profile = map_brightdata_item_to_person_profile(sparse_data, fallback_url="https://www.linkedin.com/in/sathya")
+    assert profile.name == "Sathyabhushan M N"
+    assert profile.headline == "Founder & CEO"
+    assert len(profile.experience) == 1
+    assert profile.experience[0]["company"] == "Sathya Enterprises"
+    assert profile.experience[0]["title"] == "Founder & CEO"
+    assert len(profile.education) == 1
+    assert profile.education[0]["school"] == "B. M. S. College of Engineering"
+    assert profile.education[0]["degree"] == "Bachelor of Engineering"
+    assert profile.education[0]["start_year"] == "2020-12"
+    assert profile.education[0]["end_year"] == "2024-04"
+
+
+@pytest.mark.asyncio
+async def test_brightdata_scraper_sparse_profile_maps_gracefully() -> None:
+    mock_client = MagicMock()
+    mock_scrape = MagicMock()
+    mock_linkedin = MagicMock()
+    mock_client.scrape = mock_scrape
+    mock_scrape.linkedin = mock_linkedin
+
+    mock_item = MagicMock()
+    mock_item.data = [
+        {
+            "name": "Sathyabhushan M N",
+            "about": "Founder of Sathya Enterprises",
+            "experience": None,
+            "headline": None,
+            "skills": [],
+            "certifications": ["HackerRank"],
+        }
+    ]
+    mock_linkedin.profiles = AsyncMock(return_value=[mock_item])
+
+    scraper = BrightDataLinkedInScraper(
+        token="test_brightdata_token_123",
+        client=mock_client,
+    )
+
+    profile, diag = await scraper.fetch_person_with_diagnostic("https://www.linkedin.com/in/sathya")
+    assert profile is not None
+    assert profile.name == "Sathyabhushan M N"
+    assert profile.summary == "Founder of Sathya Enterprises"
+    assert "HackerRank" in profile.certifications
+    assert diag.outcome == "ok"
+

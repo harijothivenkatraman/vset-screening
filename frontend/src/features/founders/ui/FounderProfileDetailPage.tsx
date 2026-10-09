@@ -30,6 +30,38 @@ import { UpdateProfileModal } from "./UpdateProfileModal";
 import { GuardedDeleteModal } from "./GuardedDeleteModal";
 import { AdminKeyModal, getAdminKey } from "./AdminKeyModal";
 
+const parseCertification = (
+  cert: unknown
+): { name: string; authority?: string | null; year?: string | null } => {
+  if (typeof cert === "string") {
+    const trimmed = cert.trim();
+    if (trimmed.includes(" - ")) {
+      const parts = trimmed.split(" - ");
+      const name = parts[0].trim();
+      const authority = parts.slice(1).join(" - ").trim() || null;
+      return {
+        name,
+        authority: authority && authority.toLowerCase() !== name.toLowerCase() ? authority : null,
+      };
+    }
+    return { name: trimmed };
+  }
+  if (cert && typeof cert === "object") {
+    const obj = cert as Record<string, unknown>;
+    const name = String(obj.name || obj.title || "").trim();
+    const rawAuth = obj.authority || obj.issuer || obj.issued_by || obj.issuedBy;
+    const authority = rawAuth ? String(rawAuth).trim() : null;
+    const rawYear = obj.year || obj.issued_at || obj.issuedAt;
+    const year = rawYear ? String(rawYear).trim() : null;
+    return {
+      name,
+      authority: authority && authority.toLowerCase() !== name.toLowerCase() ? authority : null,
+      year,
+    };
+  }
+  return { name: String(cert || "") };
+};
+
 export const FounderProfileDetailPage: React.FC = () => {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
@@ -530,20 +562,26 @@ export const FounderProfileDetailPage: React.FC = () => {
               </h2>
             </div>
             <div className="divide-y divide-slate-100">
-              {profile.certifications.map((cert, idx) => (
-                <div key={idx} className="py-2.5 first:pt-0 last:pb-0 space-y-0.5">
-                  <h3 className="text-xs font-semibold text-slate-900">{cert.name}</h3>
-                  <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
-                    {cert.authority && <span>{cert.authority}</span>}
-                    {cert.year && (
-                      <>
-                        <span>·</span>
-                        <span className="text-slate-500 tabular-nums">{cert.year}</span>
-                      </>
+              {profile.certifications.map((rawCert, idx) => {
+                const cert = parseCertification(rawCert);
+                if (!cert.name) return null;
+                return (
+                  <div key={idx} className="py-2.5 first:pt-0 last:pb-0 space-y-0.5">
+                    <h3 className="text-xs font-semibold text-slate-900">{cert.name}</h3>
+                    {(cert.authority || cert.year) && (
+                      <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
+                        {cert.authority && <span>{cert.authority}</span>}
+                        {cert.year && (
+                          <>
+                            {cert.authority && <span>·</span>}
+                            <span className="text-slate-500 tabular-nums">{cert.year}</span>
+                          </>
+                        )}
+                      </div>
                     )}
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
