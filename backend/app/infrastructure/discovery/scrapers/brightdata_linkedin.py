@@ -101,29 +101,82 @@ def map_brightdata_item_to_person_profile(
         for exp in raw_exp:
             if not isinstance(exp, dict):
                 continue
-            pos = str(exp.get("title") or exp.get("position") or "").strip()
             comp = str(
                 exp.get("company") or exp.get("company_name") or exp.get("companyName") or ""
             ).strip()
-            desc = str(exp.get("description") or "").strip()
-            dur = str(exp.get("duration") or "").strip()
-            start_str = str(exp.get("start_date") or exp.get("startDate") or exp.get("start") or "").strip()
-            end_str = str(exp.get("end_date") or exp.get("endDate") or exp.get("end") or "").strip()
-            is_curr = bool(
-                exp.get("is_current")
-                or (end_str and end_str.lower() in ("present", "current"))
-                or (not end_str and bool(start_str))
-            )
 
-            experiences.append({
-                "title": pos,
-                "company": comp,
-                "start": start_str,
-                "end": end_str,
-                "duration": dur,
-                "description": desc,
-                "is_current": is_curr,
-            })
+            # Check for nested positions within a company group (e.g. Sundar Pichai at Google)
+            sub_positions = exp.get("positions")
+            if isinstance(sub_positions, list) and len(sub_positions) > 0:
+                for sub in sub_positions:
+                    if not isinstance(sub, dict):
+                        continue
+                    sub_title = str(sub.get("title") or sub.get("position") or "").strip()
+                    sub_comp = str(sub.get("subtitle") or comp).strip()
+                    sub_desc = str(sub.get("description") or sub.get("info") or "").strip()
+                    sub_dur = str(sub.get("duration") or sub.get("meta") or "").strip()
+                    sub_start = str(
+                        sub.get("start_date") or sub.get("startDate") or sub.get("start") or ""
+                    ).strip()
+                    sub_end = str(
+                        sub.get("end_date") or sub.get("endDate") or sub.get("end") or ""
+                    ).strip()
+
+                    # Infer start/end from duration/meta if explicit dates are blank
+                    if not sub_start and sub_dur and " - " in sub_dur:
+                        parts = sub_dur.split(" - ")
+                        sub_start = parts[0].strip()
+                        if len(parts) > 1:
+                            sub_end = parts[1].split()[0].strip()
+
+                    sub_is_curr = bool(
+                        sub.get("is_current")
+                        or (sub_end and sub_end.lower() in ("present", "current"))
+                        or ("present" in sub_dur.lower())
+                    )
+
+                    experiences.append({
+                        "title": sub_title or comp,
+                        "company": sub_comp or comp,
+                        "start": sub_start,
+                        "end": sub_end,
+                        "duration": sub_dur,
+                        "description": sub_desc,
+                        "is_current": sub_is_curr,
+                    })
+            else:
+                pos = str(exp.get("title") or exp.get("position") or "").strip()
+                desc = str(exp.get("description") or exp.get("info") or "").strip()
+                dur = str(exp.get("duration") or exp.get("meta") or "").strip()
+                start_str = str(
+                    exp.get("start_date") or exp.get("startDate") or exp.get("start") or ""
+                ).strip()
+                end_str = str(
+                    exp.get("end_date") or exp.get("endDate") or exp.get("end") or ""
+                ).strip()
+
+                if not start_str and dur and " - " in dur:
+                    parts = dur.split(" - ")
+                    start_str = parts[0].strip()
+                    if len(parts) > 1:
+                        end_str = parts[1].split()[0].strip()
+
+                is_curr = bool(
+                    exp.get("is_current")
+                    or (end_str and end_str.lower() in ("present", "current"))
+                    or (not end_str and bool(start_str))
+                    or ("present" in dur.lower())
+                )
+
+                experiences.append({
+                    "title": pos or comp,
+                    "company": comp,
+                    "start": start_str,
+                    "end": end_str,
+                    "duration": dur,
+                    "description": desc,
+                    "is_current": is_curr,
+                })
 
     # If experiences list is empty, fallback to current_company metadata
     curr_comp = item.get("current_company")
@@ -166,7 +219,6 @@ def map_brightdata_item_to_person_profile(
             start_yr = str(ed.get("start_year") or ed.get("start_date") or "").strip()
             end_yr = str(ed.get("end_year") or ed.get("end_date") or "").strip()
             yr = end_yr or start_yr
-
             education.append({
                 "institution": school,
                 "school": school,
@@ -175,6 +227,7 @@ def map_brightdata_item_to_person_profile(
                 "year": yr,
                 "start_year": start_yr,
                 "end_year": end_yr,
+                "description": str(ed.get("description") or "").strip(),
             })
 
     # Skills
@@ -197,7 +250,7 @@ def map_brightdata_item_to_person_profile(
         for c in raw_certs:
             if isinstance(c, dict) and (c.get("name") or c.get("title")):
                 t = str(c.get("name") or c.get("title")).strip()
-                iss = str(c.get("issuer") or c.get("issued_by") or "").strip()
+                iss = str(c.get("issuer") or c.get("issued_by") or c.get("subtitle") or "").strip()
                 label = f"{t} - {iss}" if iss and iss.strip().lower() != t.strip().lower() else t
                 if label not in certifications:
                     certifications.append(label)
@@ -222,6 +275,109 @@ def map_brightdata_item_to_person_profile(
                 if l_str not in languages:
                     languages.append(l_str)
 
+    # Honors & Awards
+    raw_honors = item.get("honors_and_awards") or item.get("honors") or item.get("awards") or []
+    honors_and_awards: list[dict[str, Any]] = []
+    if isinstance(raw_honors, list):
+        for h in raw_honors:
+            if isinstance(h, dict):
+                h_title = str(h.get("title") or h.get("name") or "").strip()
+                h_pub = str(h.get("publication") or h.get("issuer") or h.get("issuer_name") or "").strip()
+                h_date = str(h.get("date") or h.get("issue_date") or "").strip()
+                if h_date and "T" in h_date:
+                    h_date = h_date.split("T")[0]
+                h_desc = str(h.get("description") or "").strip()
+                if h_title:
+                    honors_and_awards.append({
+                        "title": h_title,
+                        "issuer": h_pub,
+                        "date": h_date,
+                        "description": h_desc,
+                    })
+            elif isinstance(h, str) and h.strip():
+                honors_and_awards.append({"title": h.strip(), "issuer": "", "date": "", "description": ""})
+
+    # Publications
+    raw_pubs = item.get("publications") or []
+    publications: list[dict[str, Any]] = []
+    if isinstance(raw_pubs, list):
+        for p in raw_pubs:
+            if isinstance(p, dict):
+                p_title = str(p.get("title") or p.get("name") or "").strip()
+                p_sub = str(p.get("subtitle") or p.get("publisher") or "").strip()
+                p_date = str(p.get("date") or "").strip()
+                p_desc = str(p.get("description") or "").strip()
+                p_url = str(p.get("url") or p.get("link") or "").strip()
+                if p_title:
+                    publications.append({
+                        "title": p_title,
+                        "publisher": p_sub,
+                        "date": p_date,
+                        "description": p_desc,
+                        "url": p_url,
+                    })
+            elif isinstance(p, str) and p.strip():
+                publications.append({"title": p.strip(), "publisher": "", "date": "", "description": "", "url": ""})
+
+    # Volunteer Experience
+    raw_vol = item.get("volunteer_experience") or item.get("volunteering") or []
+    volunteer_experience: list[dict[str, Any]] = []
+    if isinstance(raw_vol, list):
+        for v in raw_vol:
+            if isinstance(v, dict):
+                v_title = str(v.get("title") or v.get("role") or "").strip()
+                v_sub = str(v.get("subtitle") or v.get("organization") or v.get("company") or "").strip()
+                v_cause = str(v.get("cause") or "").strip()
+                v_dur = str(v.get("duration") or v.get("duration_short") or "").strip()
+                v_desc = str(v.get("info") or v.get("description") or "").strip()
+                if v_title or v_sub:
+                    volunteer_experience.append({
+                        "role": v_title,
+                        "organization": v_sub,
+                        "cause": v_cause,
+                        "duration": v_dur,
+                        "description": v_desc,
+                    })
+            elif isinstance(v, str) and v.strip():
+                volunteer_experience.append({"role": v.strip(), "organization": "", "cause": "", "duration": "", "description": ""})
+
+    # Courses
+    raw_courses = item.get("courses") or []
+    courses: list[dict[str, Any]] = []
+    if isinstance(raw_courses, list):
+        for crs in raw_courses:
+            if isinstance(crs, dict):
+                c_name = str(crs.get("name") or crs.get("title") or "").strip()
+                c_num = str(crs.get("number") or "").strip()
+                if c_name:
+                    courses.append({"name": c_name, "number": c_num})
+            elif isinstance(crs, str) and crs.strip():
+                courses.append({"name": crs.strip(), "number": ""})
+
+    # Projects
+    raw_proj = item.get("projects") or []
+    projects: list[dict[str, Any]] = []
+    if isinstance(raw_proj, list):
+        for pr in raw_proj:
+            if isinstance(pr, dict):
+                pr_title = str(pr.get("title") or pr.get("name") or "").strip()
+                pr_desc = str(pr.get("description") or "").strip()
+                pr_url = str(pr.get("url") or "").strip()
+                if pr_title:
+                    projects.append({"title": pr_title, "description": pr_desc, "url": pr_url})
+            elif isinstance(pr, str) and pr.strip():
+                projects.append({"title": pr.strip(), "description": "", "url": ""})
+
+    # Recommendations
+    raw_recs = item.get("recommendations") or []
+    recommendations: list[str] = []
+    if isinstance(raw_recs, list):
+        for r in raw_recs:
+            if isinstance(r, str) and r.strip():
+                recommendations.append(r.strip())
+            elif isinstance(r, dict) and r.get("text"):
+                recommendations.append(str(r["text"]).strip())
+
     target_url = str(item.get("url") or item.get("link") or fallback_url)
 
     return PersonProfile(
@@ -241,6 +397,12 @@ def map_brightdata_item_to_person_profile(
         skills=skills,
         certifications=certifications,
         languages=languages,
+        honors_and_awards=honors_and_awards,
+        publications=publications,
+        volunteer_experience=volunteer_experience,
+        courses=courses,
+        projects=projects,
+        recommendations=recommendations,
         identity_status="verified",
     )
 
@@ -429,6 +591,18 @@ class BrightDataLinkedInScraper(ProfileScraperPort):
                 fields.append("certifications")
             if profile.languages:
                 fields.append("languages")
+            if profile.honors_and_awards:
+                fields.append("honors_and_awards")
+            if profile.publications:
+                fields.append("publications")
+            if profile.volunteer_experience:
+                fields.append("volunteer_experience")
+            if profile.courses:
+                fields.append("courses")
+            if profile.projects:
+                fields.append("projects")
+            if profile.recommendations:
+                fields.append("recommendations")
 
             raw_bytes = len(json.dumps(item).encode("utf-8"))
             outcome = "ok" if fields else "empty_text"

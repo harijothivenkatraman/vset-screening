@@ -305,3 +305,87 @@ async def test_brightdata_scraper_sparse_profile_maps_gracefully() -> None:
     assert "HackerRank" in profile.certifications
     assert diag.outcome == "ok"
 
+
+def test_map_brightdata_item_unpacks_nested_positions() -> None:
+    nested_data = {
+        "name": "Sundar Pichai",
+        "headline": "CEO at Google and Alphabet",
+        "experience": [
+            {
+                "company": "Google",
+                "title": "Google",
+                "duration": "22 years 7 months",
+                "positions": [
+                    {
+                        "title": "CEO",
+                        "start_date": "2015",
+                        "end_date": "Present",
+                        "meta": "2015 - Present 11 years",
+                        "subtitle": "Google",
+                    },
+                    {
+                        "title": "Product Management + Leadership",
+                        "start_date": "Apr 2004",
+                        "end_date": "2015",
+                        "meta": "Apr 2004 - 2015 11 years",
+                        "subtitle": "Google",
+                    },
+                ],
+            }
+        ],
+        "education": [
+            {
+                "title": "The Wharton School",
+                "degree": "MBA",
+            }
+        ],
+        "honors_and_awards": [
+            {
+                "title": "Padma Bhushan",
+                "publication": "Government of India",
+                "date": "2022-12-02",
+                "description": "Third-highest civilian award in the Republic of India.",
+            }
+        ],
+        "publications": [
+            {
+                "title": "AI First",
+                "subtitle": "Google Blog",
+                "date": "2016-10-04",
+            }
+        ],
+        "volunteer_experience": [
+            {
+                "title": "Advisory Board Member",
+                "subtitle": "STEM Education Initiative",
+                "cause": "Education",
+                "duration": "2018 - Present",
+            }
+        ],
+    }
+
+    profile = map_brightdata_item_to_person_profile(
+        nested_data, fallback_url="https://www.linkedin.com/in/sundarpichai"
+    )
+
+    assert len(profile.experience) == 2
+    assert profile.experience[0]["title"] == "CEO"
+    assert profile.experience[0]["company"] == "Google"
+    assert profile.experience[0]["is_current"] is True
+    assert profile.experience[1]["title"] == "Product Management + Leadership"
+    assert profile.experience[1]["company"] == "Google"
+    assert profile.experience[1]["start"] == "Apr 2004"
+    assert profile.experience[1]["end"] == "2015"
+
+    assert len(profile.honors_and_awards) == 1
+    assert profile.honors_and_awards[0]["title"] == "Padma Bhushan"
+    assert profile.honors_and_awards[0]["issuer"] == "Government of India"
+
+    assert len(profile.publications) == 1
+    assert profile.publications[0]["title"] == "AI First"
+
+    assert len(profile.volunteer_experience) == 1
+    assert profile.volunteer_experience[0]["role"] == "Advisory Board Member"
+    assert profile.volunteer_experience[0]["organization"] == "STEM Education Initiative"
+
+

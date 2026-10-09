@@ -178,3 +178,19 @@ backend\.venv\Scripts\pytest backend\tests\unit\test_brightdata_linkedin.py
 # Run all backend tests
 backend\.venv\Scripts\pytest backend\tests
 ```
+
+### 6.3 Generate Executive PDF Dossiers
+
+A batch extraction and publication-grade PDF renderer is available:
+
+```powershell
+# Run extraction and PDF generation
+backend\.venv\Scripts\python.exe scripts\extract_and_generate_pdfs.py
+```
+
+Generated PDFs are saved in `output/profiles/`:
+- `Satya_Nadella_Founder_Profile.pdf`: Executive brief covering 5 roles (Microsoft CEO, Univ of Chicago Trustee, Starbucks Board, Business Council, Fred Hutch) and 3 universities.
+- `Reid_Hoffman_Founder_Profile.pdf`: 7-page dossier containing 13 career roles, 6 academic institutions, 9 honors & awards, 6 authored publications, and 14 board/community leadership positions.
+- `Sundar_Pichai_Founder_Profile.pdf`: Complete executive profile unpacking nested Google roles (CEO + Product Leadership) across 22 years, plus 3 degrees (Wharton MBA, Stanford MS, IIT Kharagpur B.Tech).
+- `Andrew_Ng_Founder_Profile.pdf`: Multi-page dossier detailing 8 founder/executive roles (Coursera, DeepLearning.AI, AI Fund, LandingAI, Google Brain, Baidu, Stanford) and 3 degrees (UC Berkeley PhD, MIT, CMU).
+

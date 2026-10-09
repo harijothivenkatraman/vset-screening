@@ -86,6 +86,12 @@ class PersonProfile:
     skills: list[str] = field(default_factory=list)
     certifications: list[str] = field(default_factory=list)
     languages: list[str] = field(default_factory=list)
+    honors_and_awards: list[dict[str, Any]] = field(default_factory=list)
+    publications: list[dict[str, Any]] = field(default_factory=list)
+    volunteer_experience: list[dict[str, Any]] = field(default_factory=list)
+    courses: list[dict[str, Any]] = field(default_factory=list)
+    projects: list[dict[str, Any]] = field(default_factory=list)
+    recommendations: list[str] = field(default_factory=list)
     identity_status: str = "verified"
     verification_reason: str = ""
 

@@ -57,10 +57,10 @@ TARGET_PROFILES = [
         "filename": "Sundar_Pichai_Founder_Profile.pdf",
     },
     {
-        "name": "Jensen Huang",
-        "company": "NVIDIA",
-        "url": "https://www.linkedin.com/in/jenhsunhuang",
-        "filename": "Jensen_Huang_Founder_Profile.pdf",
+        "name": "Andrew Ng",
+        "company": "Coursera / DeepLearning.AI",
+        "url": "https://www.linkedin.com/in/andrewyng",
+        "filename": "Andrew_Ng_Founder_Profile.pdf",
     },
 ]
 
@@ -126,8 +126,8 @@ def build_profile_pdf(
         pagesize=letter,
         leftMargin=54,
         rightMargin=54,
-        topMargin=48,
-        bottomMargin=48,
+        topMargin=36,
+        bottomMargin=36,
     )
 
     styles = getSampleStyleSheet()
@@ -173,8 +173,8 @@ def build_profile_pdf(
         fontSize=13,
         leading=17,
         textColor=primary_color,
-        spaceBefore=12,
-        spaceAfter=6,
+        spaceBefore=10,
+        spaceAfter=5,
     )
 
     body_style = ParagraphStyle(
@@ -216,9 +216,14 @@ def build_profile_pdf(
 
     headline_text = profile.headline or f"Executive at {target_info['company']}"
     story.append(Paragraph(headline_text, subtitle_style))
-    story.append(Spacer(1, 8))
+    story.append(Spacer(1, 6))
 
     # 3. Key Telemetry & Coordinates Table
+    raw_url = profile.url or target_info.get("url", "")
+    short_url = raw_url.replace("https://", "").replace("http://", "").rstrip("/")
+    if "linkedin.com/in/" in short_url:
+        short_url = "linkedin.com/in/" + short_url.split("linkedin.com/in/")[-1].split("?")[0]
+
     coords_data = [
         [
             Paragraph("<b>Company Focus:</b>", body_muted),
@@ -228,7 +233,7 @@ def build_profile_pdf(
         ],
         [
             Paragraph("<b>Public Profile:</b>", body_muted),
-            Paragraph(f'<link href="{profile.url}"><font color="#0284c7">{profile.url}</font></link>', body_style),
+            Paragraph(f'<link href="{profile.url}"><font color="#0284c7">{short_url}</font></link>', body_style),
             Paragraph("<b>Followers:</b>", body_muted),
             Paragraph(f"{profile.follower_count:,}" if profile.follower_count else "Not public", body_style),
         ],
@@ -252,7 +257,7 @@ def build_profile_pdf(
         ])
     )
     story.append(coords_table)
-    story.append(Spacer(1, 12))
+    story.append(Spacer(1, 8))
 
     # 4. Summary / Executive Bio
     if profile.summary:
@@ -262,16 +267,16 @@ def build_profile_pdf(
         summary_table.setStyle(
             TableStyle([
                 ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f1f5f9")),
-                ("LEFTPADDING", (0, 0), (-1, -1), 10),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 10),
-                ("TOPPADDING", (0, 0), (-1, -1), 8),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+                ("LEFTPADDING", (0, 0), (-1, -1), 8),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+                ("TOPPADDING", (0, 0), (-1, -1), 6),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
                 ("LINELEFT", (0, 0), (0, -1), 3, brand_blue),
                 ("BOX", (0, 0), (-1, -1), 0.5, border_color),
             ])
         )
         story.append(summary_table)
-        story.append(Spacer(1, 10))
+        story.append(Spacer(1, 8))
 
     # 5. Career & Experience Timeline
     story.append(Paragraph(f"Career Experience Timeline ({len(profile.experience)} roles recorded)", section_heading))
@@ -365,7 +370,129 @@ def build_profile_pdf(
 
     story.append(Spacer(1, 10))
 
-    # 7. Skills, Certifications & Languages
+    # 7. Honors & Awards
+    if profile.honors_and_awards:
+        story.append(Paragraph(f"Honors & Awards ({len(profile.honors_and_awards)} recorded)", section_heading))
+        honors_data = [
+            [
+                Paragraph("<b>Honor / Recognition</b>", meta_badge_style),
+                Paragraph("<b>Conferred By / Issuer</b>", meta_badge_style),
+                Paragraph("<b>Date & Synopsis</b>", meta_badge_style),
+            ]
+        ]
+        for h in profile.honors_and_awards:
+            h_title = h.get("title") or "Honor"
+            h_issuer = h.get("issuer") or "—"
+            h_date = h.get("date") or ""
+            h_desc = h.get("description") or ""
+            date_synopsis = f"<b>{h_date}</b>" if h_date else ""
+            if h_desc:
+                if len(h_desc) > 220:
+                    h_desc = h_desc[:220] + "..."
+                date_synopsis = f"{date_synopsis}<br/>{h_desc}" if date_synopsis else h_desc
+            honors_data.append([
+                Paragraph(f"<b>{h_title}</b>", body_style),
+                Paragraph(h_issuer, body_style),
+                Paragraph(date_synopsis or "Conferred", body_style),
+            ])
+        honors_table = Table(honors_data, colWidths=[2.5 * inch, 1.9 * inch, 2.6 * inch])
+        honors_table.setStyle(
+            TableStyle([
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#e2e8f0")),
+                ("BOX", (0, 0), (-1, -1), 0.5, border_color),
+                ("INNERGRID", (0, 0), (-1, -1), 0.5, border_color),
+                ("TOPPADDING", (0, 0), (-1, -1), 5),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+                ("LEFTPADDING", (0, 0), (-1, -1), 6),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ])
+        )
+        story.append(honors_table)
+        story.append(Spacer(1, 10))
+
+    # 8. Publications & Authored Works
+    if profile.publications:
+        story.append(Paragraph(f"Publications & Authored Works ({len(profile.publications)} recorded)", section_heading))
+        pubs_data = [
+            [
+                Paragraph("<b>Title / Work</b>", meta_badge_style),
+                Paragraph("<b>Publisher / Outlet</b>", meta_badge_style),
+                Paragraph("<b>Date & Synopsis</b>", meta_badge_style),
+            ]
+        ]
+        for p in profile.publications:
+            p_title = p.get("title") or "Publication"
+            p_pub = p.get("publisher") or "—"
+            p_date = p.get("date") or ""
+            p_desc = p.get("description") or ""
+            date_synopsis = f"<b>{p_date}</b>" if p_date else ""
+            if p_desc:
+                if len(p_desc) > 220:
+                    p_desc = p_desc[:220] + "..."
+                date_synopsis = f"{date_synopsis}<br/>{p_desc}" if date_synopsis else p_desc
+            pubs_data.append([
+                Paragraph(f"<b>{p_title}</b>", body_style),
+                Paragraph(p_pub, body_style),
+                Paragraph(date_synopsis or "Published", body_style),
+            ])
+        pubs_table = Table(pubs_data, colWidths=[2.5 * inch, 1.9 * inch, 2.6 * inch])
+        pubs_table.setStyle(
+            TableStyle([
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#e2e8f0")),
+                ("BOX", (0, 0), (-1, -1), 0.5, border_color),
+                ("INNERGRID", (0, 0), (-1, -1), 0.5, border_color),
+                ("TOPPADDING", (0, 0), (-1, -1), 5),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+                ("LEFTPADDING", (0, 0), (-1, -1), 6),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ])
+        )
+        story.append(pubs_table)
+        story.append(Spacer(1, 10))
+
+    # 9. Board Memberships & Community Leadership
+    if profile.volunteer_experience:
+        story.append(Paragraph(f"Board Memberships & Community Leadership ({len(profile.volunteer_experience)} recorded)", section_heading))
+        vol_data = [
+            [
+                Paragraph("<b>Role & Organization</b>", meta_badge_style),
+                Paragraph("<b>Cause / Domain</b>", meta_badge_style),
+                Paragraph("<b>Tenure & Mission</b>", meta_badge_style),
+            ]
+        ]
+        for v in profile.volunteer_experience[:8]:
+            v_role = v.get("role") or "Member"
+            v_org = v.get("organization") or "Organization"
+            v_cause = v.get("cause") or "Leadership"
+            v_dur = v.get("duration") or ""
+            v_desc = v.get("description") or ""
+            if len(v_desc) > 200:
+                v_desc = v_desc[:200] + "..."
+            right_col = f"<b>{v_dur}</b><br/>{v_desc}" if v_dur else v_desc
+            vol_data.append([
+                Paragraph(f"<b>{v_role}</b><br/><font color='#0284c7'>{v_org}</font>", body_style),
+                Paragraph(v_cause, body_style),
+                Paragraph(right_col or "Active", body_style),
+            ])
+        vol_table = Table(vol_data, colWidths=[2.5 * inch, 1.8 * inch, 2.7 * inch])
+        vol_table.setStyle(
+            TableStyle([
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#e2e8f0")),
+                ("BOX", (0, 0), (-1, -1), 0.5, border_color),
+                ("INNERGRID", (0, 0), (-1, -1), 0.5, border_color),
+                ("TOPPADDING", (0, 0), (-1, -1), 5),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+                ("LEFTPADDING", (0, 0), (-1, -1), 6),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ])
+        )
+        story.append(vol_table)
+        story.append(Spacer(1, 10))
+
+    # 10. Skills, Certifications & Languages
     misc_items = []
     if profile.skills:
         skill_str = " &nbsp;·&nbsp; ".join(f"<b>{s}</b>" for s in profile.skills[:15])
@@ -394,8 +521,8 @@ def build_profile_pdf(
         )
         story.append(misc_table)
 
-    # 8. Provenance & Verification Metadata Box
-    story.append(Spacer(1, 14))
+    # 11. Provenance & Verification Metadata Box
+    story.append(Spacer(1, 8))
     provenance_text = (
         f"<b>Extraction & Audit Trail:</b> Mapped via Bright Data Managed LinkedIn Scraper API. "
         f"Diagnostic Outcome: <b>{diag.outcome.upper()}</b>. "
@@ -447,14 +574,23 @@ async def main() -> None:
         print(f"\n[{idx}/4] Extracting LinkedIn Profile: {target['name']} ({target['company']})")
         print(f"      URL: {target['url']}")
 
-        profile, diag = await scraper.fetch_person_with_diagnostic(target["url"])
+        profile = None
+        for attempt in range(2):
+            profile, diag = await scraper.fetch_person_with_diagnostic(target["url"])
+            if profile:
+                break
+            if attempt == 0:
+                print(f"      Transient issue ({diag.outcome}: {diag.error_details}). Retrying in 3 seconds...")
+                await asyncio.sleep(3)
+
         if not profile:
             print(f"      FAILED: Diagnostic outcome: {diag.outcome}, Error: {diag.error_details}")
             continue
 
         print(f"      Extraction Successful! (Outcome: {diag.outcome}, Bytes: {diag.bytes_fetched:,})")
         print(f"      Headline: {profile.headline}")
-        print(f"      Experiences: {len(profile.experience)}, Education: {len(profile.education)}, Skills: {len(profile.skills)}")
+        print(f"      Experiences: {len(profile.experience)} (unpacked roles) | Education: {len(profile.education)}")
+        print(f"      Honors: {len(profile.honors_and_awards)} | Pubs: {len(profile.publications)} | Volunteer: {len(profile.volunteer_experience)}")
 
         pdf_path = output_dir / target["filename"]
         print(f"      Rendering Executive PDF: {pdf_path.name}...")
